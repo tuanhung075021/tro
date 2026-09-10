@@ -18,12 +18,19 @@ from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
-try:
-    import sqlmodel
-    from sqlmodel import SQLModel, Field, Session, create_engine, select, col
-    SQLMODEL_INSTALLED = True
-except ImportError:
+USE_NATIVE_SQLMODEL = os.environ.get("USE_NATIVE_SQLMODEL", "0") == "1"
+
+if USE_NATIVE_SQLMODEL:
+    try:
+        import sqlmodel
+        from sqlmodel import SQLModel, Field, Session, create_engine, select, col
+        SQLMODEL_INSTALLED = True
+    except ImportError:
+        SQLMODEL_INSTALLED = False
+else:
     SQLMODEL_INSTALLED = False
+
+if not SQLMODEL_INSTALLED:
 
     _TABLE_REGISTRY: Dict[str, Type["SQLModel"]] = {}
 
@@ -554,13 +561,17 @@ try:
             def __init__(self, app: Any = None, **kwargs: Any):
                 self.app = app
                 self.kwargs = kwargs
-    try:
-        from fastapi.testclient import TestClient
-    except (ImportError, RuntimeError):
-        TestClient = None  # type: ignore[assignment, misc]
 except ImportError:
     FASTAPI_INSTALLED = False
 
+if FASTAPI_INSTALLED:
+    class _ParamInfo:
+        pass
+    class _HeaderInfo(_ParamInfo):
+        pass
+    class _QueryInfo(_ParamInfo):
+        pass
+else:
     class CORSMiddleware:
         """CORSMiddleware placeholder."""
         def __init__(self, app: Any = None, **kwargs: Any):
@@ -762,81 +773,101 @@ except ImportError:
                 return func
             return decorator
 
-    class TestResponse:
-        """Simulated HTTP response for TestClient."""
-        def __init__(self, status_code: int, data: Any = None, headers: Optional[Dict[str, str]] = None):
-            self.status_code = status_code
-            self._data = data
-            self.headers = headers or {}
+class TestResponse:
+    """Simulated HTTP response for TestClient."""
+    def __init__(self, status_code: int, data: Any = None, headers: Optional[Dict[str, str]] = None):
+        self.status_code = status_code
+        self._data = data
+        self.headers = headers or {}
 
-        def json(self) -> Any:
-            def _serialize(item: Any) -> Any:
-                if isinstance(item, list):
-                    return [_serialize(x) for x in item]
-                if isinstance(item, dict):
-                    return {k: _serialize(v) for k, v in item.items()}
-                if hasattr(item, "model_dump"):
-                    return item.model_dump(mode="json")
-                if hasattr(item, "dict"):
-                    return item.dict()
-                return item
-            return _serialize(self._data)
+    def json(self) -> Any:
+        def _serialize(item: Any) -> Any:
+            if isinstance(item, list):
+                return [_serialize(x) for x in item]
+            if isinstance(item, dict):
+                return {k: _serialize(v) for k, v in item.items()}
+            if hasattr(item, "model_dump"):
+                return item.model_dump(mode="json")
+            if hasattr(item, "dict"):
+                return item.dict()
+            return item
+        return _serialize(self._data)
 
-        @property
-        def text(self) -> str:
-            if isinstance(self._data, str):
-                return self._data
-            return json.dumps(self.json(), default=str)
+    @property
+    def text(self) -> str:
+        if isinstance(self._data, str):
+            return self._data
+        return json.dumps(self.json(), default=str)
 
-    def _match_path(pattern: str, url: str) -> Tuple[bool, Dict[str, Any]]:
-        p = pattern.strip("/")
-        u = url.split("?")[0].strip("/")
-        p_parts = [x for x in p.split("/") if x]
-        u_parts = [x for x in u.split("/") if x]
+def _match_path(pattern: str, url: str) -> Tuple[bool, Dict[str, Any]]:
+    p = pattern.strip("/")
+    u = url.split("?")[0].strip("/")
+    p_parts = [x for x in p.split("/") if x]
+    u_parts = [x for x in u.split("/") if x]
 
-        # Handle prefix differences like api/v1 or api/v1/auth
-        if len(p_parts) != len(u_parts):
-            if p_parts[:2] == ["api", "v1"] and p_parts[2:] == u_parts:
-                p_parts = p_parts[2:]
-            elif u_parts[:2] == ["api", "v1"] and u_parts[2:] == p_parts:
-                u_parts = u_parts[2:]
-            elif p_parts[:3] == ["api", "v1", "auth"] and p_parts[3:] == u_parts:
-                p_parts = p_parts[3:]
-            elif u_parts[:3] == ["api", "v1", "auth"] and u_parts[3:] == p_parts:
-                u_parts = u_parts[3:]
-            else:
-                return False, {}
-
-        if len(p_parts) != len(u_parts):
+    # Handle prefix differences like api/v1 or api/v1/auth
+    if len(p_parts) != len(u_parts):
+        if p_parts[:2] == ["api", "v1"] and p_parts[2:] == u_parts:
+            p_parts = p_parts[2:]
+        elif u_parts[:2] == ["api", "v1"] and u_parts[2:] == p_parts:
+            u_parts = u_parts[2:]
+        elif p_parts[:3] == ["api", "v1", "auth"] and p_parts[3:] == u_parts:
+            p_parts = p_parts[3:]
+        elif u_parts[:3] == ["api", "v1", "auth"] and u_parts[3:] == p_parts:
+            u_parts = u_parts[3:]
+        else:
             return False, {}
 
-        params: Dict[str, Any] = {}
-        for p_seg, u_seg in zip(p_parts, u_parts):
-            if p_seg.startswith("{") and p_seg.endswith("}"):
-                param_name = p_seg[1:-1]
-                params[param_name] = u_seg
-            elif p_seg != u_seg:
-                return False, {}
-        return True, params
+    if len(p_parts) != len(u_parts):
+        return False, {}
 
-    def _resolve_dependencies(
-        func: Callable[..., Any],
-        path_params: Dict[str, Any],
-        body_data: Any = None,
-        headers: Optional[Dict[str, str]] = None,
-        query_params: Optional[Dict[str, Any]] = None,
-        session_override: Optional[Any] = None,
-    ) -> Dict[str, Any]:
-        import inspect
-        sig = inspect.signature(func)
-        kwargs: Dict[str, Any] = {}
-        headers = headers or {}
-        query_params = query_params or {}
-        lower_headers = {k.lower(): v for k, v in headers.items()}
+    params: Dict[str, Any] = {}
+    for p_seg, u_seg in zip(p_parts, u_parts):
+        if p_seg.startswith("{") and p_seg.endswith("}"):
+            param_name = p_seg[1:-1]
+            params[param_name] = u_seg
+        elif p_seg != u_seg:
+            return False, {}
+    return True, params
 
-        for param_name, param in sig.parameters.items():
-            if param_name in path_params:
-                val = path_params[param_name]
+def _resolve_dependencies(
+    func: Callable[..., Any],
+    path_params: Dict[str, Any],
+    body_data: Any = None,
+    headers: Optional[Dict[str, str]] = None,
+    query_params: Optional[Dict[str, Any]] = None,
+    session_override: Optional[Any] = None,
+) -> Dict[str, Any]:
+    import inspect
+    sig = inspect.signature(func)
+    kwargs: Dict[str, Any] = {}
+    headers = headers or {}
+    query_params = query_params or {}
+    lower_headers = {k.lower(): v for k, v in headers.items()}
+
+    for param_name, param in sig.parameters.items():
+        if param_name in path_params:
+            val = path_params[param_name]
+            if param.annotation is int or param.annotation == "int":
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    pass
+            kwargs[param_name] = val
+            continue
+        elif "id" in path_params and (param_name.endswith("_id") or param_name == "id"):
+            val = path_params["id"]
+            if param.annotation is int or param.annotation == "int":
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    pass
+            kwargs[param_name] = val
+            continue
+        elif param_name == "id":
+            id_candidates = [v for k, v in path_params.items() if k.endswith("_id")]
+            if id_candidates:
+                val = id_candidates[0]
                 if param.annotation is int or param.annotation == "int":
                     try:
                         val = int(val)
@@ -844,232 +875,225 @@ except ImportError:
                         pass
                 kwargs[param_name] = val
                 continue
-            elif "id" in path_params and (param_name.endswith("_id") or param_name == "id"):
-                val = path_params["id"]
-                if param.annotation is int or param.annotation == "int":
-                    try:
-                        val = int(val)
-                    except (ValueError, TypeError):
-                        pass
-                kwargs[param_name] = val
-                continue
-            elif param_name == "id":
-                id_candidates = [v for k, v in path_params.items() if k.endswith("_id")]
-                if id_candidates:
-                    val = id_candidates[0]
-                    if param.annotation is int or param.annotation == "int":
-                        try:
-                            val = int(val)
-                        except (ValueError, TypeError):
-                            pass
-                    kwargs[param_name] = val
-                    continue
 
-            default = param.default
+        default = param.default
 
-            if isinstance(default, _QueryInfo):
-                query_key = default.alias or param_name
-                kwargs[param_name] = query_params.get(query_key, default.default)
-                continue
-
-            if isinstance(default, _HeaderInfo):
-                header_key = (default.alias or param_name).lower()
-                kwargs[param_name] = lower_headers.get(header_key, default.default)
-                continue
-
-            if isinstance(default, _ParamInfo):
-                param_key = (default.alias or param_name).lower()
-                kwargs[param_name] = lower_headers.get(param_key, query_params.get(default.alias or param_name, default.default))
-                continue
-
-            if isinstance(default, Depends):
-                dep_func = default.dependency
-                if dep_func is None:
-                    kwargs[param_name] = None
-                    continue
-                if getattr(dep_func, "__name__", "") == "get_session":
-                    if session_override is not None:
-                        kwargs[param_name] = session_override
-                    else:
-                        from .database import get_session
-                        gen = get_session()
-                        kwargs[param_name] = next(gen)
-                else:
-                    dep_kwargs = _resolve_dependencies(
-                        dep_func,
-                        path_params,
-                        body_data=body_data,
-                        headers=headers,
-                        query_params=query_params,
-                        session_override=session_override,
-                    )
-                    kwargs[param_name] = dep_func(**dep_kwargs)
-                continue
-
-            ann = param.annotation
-            if hasattr(ann, "model_validate") or (isinstance(ann, type) and issubclass(ann, BaseModel)):
-                if body_data is not None:
-                    if isinstance(body_data, ann):
-                        kwargs[param_name] = body_data
-                    elif isinstance(body_data, dict):
-                        kwargs[param_name] = ann(**body_data)
-                    else:
-                        kwargs[param_name] = body_data
-                continue
-
-            if param_name in query_params:
-                val = query_params[param_name]
-                if ann is int or ann == "int":
-                    try:
-                        val = int(val)
-                    except (ValueError, TypeError):
-                        pass
-                kwargs[param_name] = val
-                continue
-
-            if param_name == "authorization":
-                kwargs[param_name] = lower_headers.get("authorization")
-                continue
-            if param_name == "token":
-                auth_val = lower_headers.get("authorization", "")
-                if auth_val.startswith("Bearer "):
-                    kwargs[param_name] = auth_val[7:].strip()
-                else:
-                    kwargs[param_name] = auth_val or None
-                continue
-
-            if param_name == "session":
+        if hasattr(default, "dependency") and getattr(default, "dependency", None) is not None:
+            dep_func = default.dependency
+            if getattr(dep_func, "__name__", "") == "get_session":
                 if session_override is not None:
                     kwargs[param_name] = session_override
                 else:
                     from .database import get_session
                     gen = get_session()
                     kwargs[param_name] = next(gen)
-                continue
-
-            if default is not inspect.Parameter.empty:
-                kwargs[param_name] = default
-
-        return kwargs
-
-    class TestClient:
-        """Standalone HTTP test client dispatching requests to FastAPI/APIRouter routes."""
-        def __init__(self, app: Any):
-            self.app = app
-
-        def __enter__(self) -> "TestClient":
-            if hasattr(self.app, "lifespan") and self.app.lifespan is not None:
-                try:
-                    ctx = self.app.lifespan(self.app)
-                    if hasattr(ctx, "__aenter__"):
-                        import asyncio
-                        try:
-                            loop = asyncio.get_event_loop()
-                        except RuntimeError:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        if loop.is_running():
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                executor.submit(asyncio.run, ctx.__aenter__()).result()
-                        else:
-                            loop.run_until_complete(ctx.__aenter__())
-                        self._lifespan_ctx = ctx
-                    elif hasattr(ctx, "__enter__"):
-                        ctx.__enter__()
-                        self._lifespan_ctx = ctx
-                except Exception:
-                    pass
-            return self
-
-        def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-            if hasattr(self, "_lifespan_ctx") and self._lifespan_ctx is not None:
-                try:
-                    if hasattr(self._lifespan_ctx, "__aexit__"):
-                        import asyncio
-                        try:
-                            loop = asyncio.get_event_loop()
-                        except RuntimeError:
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                        if loop.is_running():
-                            import concurrent.futures
-                            with concurrent.futures.ThreadPoolExecutor() as executor:
-                                executor.submit(asyncio.run, self._lifespan_ctx.__aexit__(exc_type, exc_val, exc_tb)).result()
-                        else:
-                            loop.run_until_complete(self._lifespan_ctx.__aexit__(exc_type, exc_val, exc_tb))
-                    elif hasattr(self._lifespan_ctx, "__exit__"):
-                        self._lifespan_ctx.__exit__(exc_type, exc_val, exc_tb)
-                except Exception:
-                    pass
-
-        def request(
-            self,
-            method: str,
-            url: str,
-            json: Optional[Any] = None,
-            data: Optional[Any] = None,
-            headers: Optional[Dict[str, str]] = None,
-            params: Optional[Dict[str, Any]] = None,
-            session: Optional[Any] = None,
-            **kwargs: Any,
-        ) -> TestResponse:
-            matched_route = None
-            path_params: Dict[str, Any] = {}
-            for r in self.app.routes:
-                if method.upper() in r.methods:
-                    m, p = _match_path(r.path, url)
-                    if m:
-                        matched_route = r
-                        path_params = p
-                        break
-
-            if not matched_route:
-                return TestResponse(404, {"detail": f"Not Found: {method} {url}"})
-
-            query_dict = dict(params or {})
-            if "?" in url:
-                from urllib.parse import parse_qs, urlsplit
-                parsed_query = parse_qs(urlsplit(url).query)
-                for k, v in parsed_query.items():
-                    if k not in query_dict:
-                        query_dict[k] = v[0] if len(v) == 1 else v
-
-            body_content = json if json is not None else data
-            try:
-                call_kwargs = _resolve_dependencies(
-                    matched_route.endpoint,
+            elif type(dep_func).__name__ == "OAuth2PasswordBearer":
+                auth_val = lower_headers.get("authorization", "")
+                if auth_val.startswith("Bearer "):
+                    kwargs[param_name] = auth_val[7:].strip()
+                elif auth_val:
+                    kwargs[param_name] = auth_val
+                else:
+                    kwargs[param_name] = None
+            else:
+                dep_kwargs = _resolve_dependencies(
+                    dep_func,
                     path_params,
-                    body_data=body_content,
+                    body_data=body_data,
                     headers=headers,
-                    query_params=query_dict,
-                    session_override=session,
+                    query_params=query_params,
+                    session_override=session_override,
                 )
-                res = matched_route.endpoint(**call_kwargs)
-                status_code = matched_route.status_code or 200
-                return TestResponse(status_code, res)
-            except HTTPException as exc:
-                return TestResponse(exc.status_code, {"detail": exc.detail}, headers=exc.headers)
-            except pydantic.ValidationError as exc:
-                return TestResponse(422, {"detail": exc.errors()})
-            except ValueError as exc:
-                return TestResponse(400, {"detail": str(exc)})
-            except Exception as exc:
-                return TestResponse(500, {"detail": str(exc)})
+                kwargs[param_name] = dep_func(**dep_kwargs)
+            continue
 
-        def get(self, url: str, **kwargs: Any) -> TestResponse:
-            return self.request("GET", url, **kwargs)
+        if hasattr(default, "alias") or hasattr(default, "default") or isinstance(default, _ParamInfo):
+            alias = getattr(default, "alias", None) or param_name
+            param_key = alias.lower()
+            def_val = getattr(default, "default", None)
+            if def_val is PydanticUndefined or str(type(def_val)) == "<class 'ellipsis'>" or str(def_val) == "Ellipsis":
+                def_val = None
+            val = lower_headers.get(param_key, query_params.get(alias, def_val))
+            kwargs[param_name] = val
+            continue
 
-        def post(self, url: str, **kwargs: Any) -> TestResponse:
-            return self.request("POST", url, **kwargs)
+        ann = param.annotation
+        if hasattr(ann, "model_validate") or (isinstance(ann, type) and issubclass(ann, BaseModel)):
+            if body_data is not None:
+                if isinstance(ann, type) and isinstance(body_data, ann):
+                    kwargs[param_name] = body_data
+                elif isinstance(body_data, dict):
+                    kwargs[param_name] = ann(**body_data)
+                else:
+                    kwargs[param_name] = body_data
+            continue
 
-        def put(self, url: str, **kwargs: Any) -> TestResponse:
-            return self.request("PUT", url, **kwargs)
+        if param_name in query_params:
+            val = query_params[param_name]
+            if ann is int or ann == "int":
+                try:
+                    val = int(val)
+                except (ValueError, TypeError):
+                    pass
+            kwargs[param_name] = val
+            continue
 
-        def delete(self, url: str, **kwargs: Any) -> TestResponse:
-            return self.request("DELETE", url, **kwargs)
+        if param_name == "authorization":
+            kwargs[param_name] = lower_headers.get("authorization")
+            continue
+        if param_name == "token":
+            auth_val = lower_headers.get("authorization", "")
+            if auth_val.startswith("Bearer "):
+                kwargs[param_name] = auth_val[7:].strip()
+            else:
+                kwargs[param_name] = auth_val or None
+            continue
 
-    # Register virtual fastapi modules in sys.modules
+        if param_name == "session":
+            if session_override is not None:
+                kwargs[param_name] = session_override
+            else:
+                from .database import get_session
+                gen = get_session()
+                kwargs[param_name] = next(gen)
+            continue
+
+        if default is not inspect.Parameter.empty:
+            kwargs[param_name] = default
+
+    return kwargs
+
+class TestClient:
+    """Standalone HTTP test client dispatching requests to FastAPI/APIRouter routes."""
+    def __init__(self, app: Any):
+        self.app = app
+
+    def __enter__(self) -> "TestClient":
+        if hasattr(self.app, "lifespan") and self.app.lifespan is not None:
+            try:
+                ctx = self.app.lifespan(self.app)
+                if hasattr(ctx, "__aenter__"):
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    if loop.is_running():
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            executor.submit(asyncio.run, ctx.__aenter__()).result()
+                    else:
+                        loop.run_until_complete(ctx.__aenter__())
+                    self._lifespan_ctx = ctx
+                elif hasattr(ctx, "__enter__"):
+                    ctx.__enter__()
+                    self._lifespan_ctx = ctx
+            except Exception:
+                pass
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if hasattr(self, "_lifespan_ctx") and self._lifespan_ctx is not None:
+            try:
+                if hasattr(self._lifespan_ctx, "__aexit__"):
+                    import asyncio
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    if loop.is_running():
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            executor.submit(asyncio.run, self._lifespan_ctx.__aexit__(exc_type, exc_val, exc_tb)).result()
+                    else:
+                        loop.run_until_complete(self._lifespan_ctx.__aexit__(exc_type, exc_val, exc_tb))
+                elif hasattr(self._lifespan_ctx, "__exit__"):
+                    self._lifespan_ctx.__exit__(exc_type, exc_val, exc_tb)
+            except Exception:
+                pass
+
+    def request(
+        self,
+        method: str,
+        url: str,
+        json: Optional[Any] = None,
+        data: Optional[Any] = None,
+        headers: Optional[Dict[str, str]] = None,
+        params: Optional[Dict[str, Any]] = None,
+        session: Optional[Any] = None,
+        **kwargs: Any,
+    ) -> TestResponse:
+        def _get_routes(r_list: Any) -> List[Any]:
+            flat = []
+            for r in r_list:
+                if hasattr(r, "original_router") and hasattr(r.original_router, "routes"):
+                    flat.extend(_get_routes(r.original_router.routes))
+                elif hasattr(r, "routes"):
+                    flat.extend(_get_routes(r.routes))
+                elif hasattr(r, "methods") and hasattr(r, "path"):
+                    flat.append(r)
+            return flat
+
+        matched_route = None
+        path_params: Dict[str, Any] = {}
+        for r in _get_routes(getattr(self.app, "routes", [])):
+            route_methods = getattr(r, "methods", set()) or set()
+            if method.upper() in route_methods:
+                m, p = _match_path(r.path, url)
+                if m:
+                    matched_route = r
+                    path_params = p
+                    break
+
+        if not matched_route:
+            return TestResponse(404, {"detail": f"Not Found: {method} {url}"})
+
+        query_dict = dict(params or {})
+        if "?" in url:
+            from urllib.parse import parse_qs, urlsplit
+            parsed_query = parse_qs(urlsplit(url).query)
+            for k, v in parsed_query.items():
+                if k not in query_dict:
+                    query_dict[k] = v[0] if len(v) == 1 else v
+
+        body_content = json if json is not None else data
+        try:
+            call_kwargs = _resolve_dependencies(
+                matched_route.endpoint,
+                path_params,
+                body_data=body_content,
+                headers=headers,
+                query_params=query_dict,
+                session_override=session,
+            )
+            res = matched_route.endpoint(**call_kwargs)
+            status_code = matched_route.status_code or 200
+            return TestResponse(status_code, res)
+        except HTTPException as exc:
+            return TestResponse(exc.status_code, {"detail": exc.detail}, headers=exc.headers)
+        except pydantic.ValidationError as exc:
+            return TestResponse(422, {"detail": exc.errors()})
+        except ValueError as exc:
+            return TestResponse(400, {"detail": str(exc)})
+        except Exception as exc:
+            return TestResponse(500, {"detail": str(exc)})
+
+    def get(self, url: str, **kwargs: Any) -> TestResponse:
+        return self.request("GET", url, **kwargs)
+
+    def post(self, url: str, **kwargs: Any) -> TestResponse:
+        return self.request("POST", url, **kwargs)
+
+    def put(self, url: str, **kwargs: Any) -> TestResponse:
+        return self.request("PUT", url, **kwargs)
+
+    def delete(self, url: str, **kwargs: Any) -> TestResponse:
+        return self.request("DELETE", url, **kwargs)
+
+
+if not FASTAPI_INSTALLED:
     fastapi_mod = types.ModuleType("fastapi")
     fastapi_mod.APIRouter = APIRouter
     fastapi_mod.Depends = Depends
@@ -1095,8 +1119,6 @@ except ImportError:
     sys.modules["fastapi.security"] = security_mod
     fastapi_mod.security = security_mod
 
-    testclient_mod = types.ModuleType("fastapi.testclient")
-    testclient_mod.TestClient = TestClient
-    sys.modules["fastapi.testclient"] = testclient_mod
-    fastapi_mod.testclient = testclient_mod
-
+testclient_mod = types.ModuleType("fastapi.testclient")
+testclient_mod.TestClient = TestClient
+sys.modules["fastapi.testclient"] = testclient_mod
