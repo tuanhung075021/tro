@@ -556,7 +556,7 @@ try:
                 self.kwargs = kwargs
     try:
         from fastapi.testclient import TestClient
-    except ImportError:
+    except (ImportError, RuntimeError):
         TestClient = None  # type: ignore[assignment, misc]
 except ImportError:
     FASTAPI_INSTALLED = False
