@@ -129,7 +129,23 @@ class SystemConfig(SQLModel, table=True):
         """Serialize and store tiers list into tiers_json field."""
         if not isinstance(tiers, list):
             raise TypeError("Tiers must be a list of tier dictionary objects.")
+        if not tiers:
+            raise ValueError("Tiers list cannot be empty.")
+        for idx, t in enumerate(tiers):
+            if not isinstance(t, dict):
+                raise TypeError(f"Tier at index {idx} must be a dictionary.")
+            if "tier_number" not in t or "unit_price" not in t:
+                raise ValueError(f"Tier at index {idx} must have 'tier_number' and 'unit_price'.")
+            int(t["tier_number"])
+            float(t["unit_price"])
+            if t.get("max_threshold") is not None:
+                float(t["max_threshold"])
         self.tiers_json = json.dumps(tiers, ensure_ascii=False)
+
+    @property
+    def tiers(self) -> List[Dict[str, Any]]:
+        """Property alias for parsed tiers list."""
+        return self.get_tiers()
 
     def to_electricity_config(self) -> Any:
         """Bridge database configuration to core.models.ElectricityConfig for calculation."""
@@ -228,3 +244,24 @@ class Invoice(SQLModel, table=True):
     def set_breakdown(self, breakdown: Dict[str, Any]) -> None:
         """Serialize dictionary into breakdown_json field."""
         self.breakdown_json = json.dumps(breakdown, ensure_ascii=False)
+
+    @property
+    def breakdown(self) -> Optional[Dict[str, Any]]:
+        """Property alias for parsed breakdown dictionary."""
+        return self.get_breakdown()
+
+    @property
+    def room_number(self) -> Optional[str]:
+        """Convenience property extracting room_number from breakdown if available."""
+        b = self.get_breakdown()
+        if b and isinstance(b, dict):
+            return b.get("room_number")
+        return None
+
+    @property
+    def property_name(self) -> Optional[str]:
+        """Convenience property extracting property_name from breakdown if available."""
+        b = self.get_breakdown()
+        if b and isinstance(b, dict):
+            return b.get("property_name")
+        return None

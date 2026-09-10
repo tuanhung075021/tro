@@ -548,11 +548,24 @@ try:
     from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
     FASTAPI_INSTALLED = True
     try:
+        from fastapi.middleware.cors import CORSMiddleware
+    except ImportError:
+        class CORSMiddleware:  # type: ignore[no-redef]
+            def __init__(self, app: Any = None, **kwargs: Any):
+                self.app = app
+                self.kwargs = kwargs
+    try:
         from fastapi.testclient import TestClient
     except ImportError:
         TestClient = None  # type: ignore[assignment, misc]
 except ImportError:
     FASTAPI_INSTALLED = False
+
+    class CORSMiddleware:
+        """CORSMiddleware placeholder."""
+        def __init__(self, app: Any = None, **kwargs: Any):
+            self.app = app
+            self.kwargs = kwargs
 
     class HTTPException(Exception):
         """HTTP exception carrying status code, message detail, and headers."""
@@ -591,17 +604,25 @@ except ImportError:
             self.use_cache = use_cache
 
     class _ParamInfo:
-        """Header and Query parameter specification placeholder."""
+        """Parameter specification placeholder."""
         def __init__(self, default: Any = None, alias: Optional[str] = None, **kwargs: Any):
             self.default = default
             self.alias = alias
             self.extra = kwargs
 
+    class _HeaderInfo(_ParamInfo):
+        """Header parameter specification placeholder."""
+        pass
+
+    class _QueryInfo(_ParamInfo):
+        """Query parameter specification placeholder."""
+        pass
+
     def Header(default: Any = None, *, alias: Optional[str] = None, **kwargs: Any) -> Any:
-        return _ParamInfo(default=default, alias=alias, **kwargs)
+        return _HeaderInfo(default=default, alias=alias, **kwargs)
 
     def Query(default: Any = None, *, alias: Optional[str] = None, **kwargs: Any) -> Any:
-        return _ParamInfo(default=default, alias=alias, **kwargs)
+        return _QueryInfo(default=default, alias=alias, **kwargs)
 
     class OAuth2PasswordBearer:
         """OAuth2 password bearer scheme placeholder."""
@@ -691,9 +712,15 @@ except ImportError:
 
     class FastAPI:
         """Lightweight FastAPI application registering routes."""
-        def __init__(self, title: str = "tro API", **kwargs: Any):
+        def __init__(self, title: str = "tro API", lifespan: Optional[Any] = None, **kwargs: Any):
             self.title = title
+            self.lifespan = lifespan
             self.routes: List[Route] = []
+            self.middleware: List[Any] = []
+
+        def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
+            """Register middleware (no-op in test/compat mode)."""
+            self.middleware.append((middleware_class, kwargs))
 
         def include_router(self, router: APIRouter, prefix: str = "", **kwargs: Any) -> None:
             for r in router.routes:
@@ -711,15 +738,27 @@ except ImportError:
                     )
                 )
 
-        def get(self, path: str, **kwargs: Any):
+        def get(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
             def decorator(func: Callable[..., Any]):
-                self.routes.append(Route(path, func, ["GET"], **kwargs))
+                self.routes.append(Route(path, func, ["GET"], response_model=response_model, status_code=status_code, **kwargs))
                 return func
             return decorator
 
-        def post(self, path: str, **kwargs: Any):
+        def post(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
             def decorator(func: Callable[..., Any]):
-                self.routes.append(Route(path, func, ["POST"], **kwargs))
+                self.routes.append(Route(path, func, ["POST"], response_model=response_model, status_code=status_code, **kwargs))
+                return func
+            return decorator
+
+        def put(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.routes.append(Route(path, func, ["PUT"], response_model=response_model, status_code=status_code, **kwargs))
+                return func
+            return decorator
+
+        def delete(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.routes.append(Route(path, func, ["DELETE"], response_model=response_model, status_code=status_code, **kwargs))
                 return func
             return decorator
 
@@ -731,13 +770,17 @@ except ImportError:
             self.headers = headers or {}
 
         def json(self) -> Any:
-            if isinstance(self._data, (dict, list)):
-                return self._data
-            if hasattr(self._data, "model_dump"):
-                return self._data.model_dump(mode="json")
-            if hasattr(self._data, "dict"):
-                return self._data.dict()
-            return self._data
+            def _serialize(item: Any) -> Any:
+                if isinstance(item, list):
+                    return [_serialize(x) for x in item]
+                if isinstance(item, dict):
+                    return {k: _serialize(v) for k, v in item.items()}
+                if hasattr(item, "model_dump"):
+                    return item.model_dump(mode="json")
+                if hasattr(item, "dict"):
+                    return item.dict()
+                return item
+            return _serialize(self._data)
 
         @property
         def text(self) -> str:
@@ -751,9 +794,13 @@ except ImportError:
         p_parts = [x for x in p.split("/") if x]
         u_parts = [x for x in u.split("/") if x]
 
-        # Handle prefix difference like api/v1/auth
+        # Handle prefix differences like api/v1 or api/v1/auth
         if len(p_parts) != len(u_parts):
-            if p_parts[:3] == ["api", "v1", "auth"] and p_parts[3:] == u_parts:
+            if p_parts[:2] == ["api", "v1"] and p_parts[2:] == u_parts:
+                p_parts = p_parts[2:]
+            elif u_parts[:2] == ["api", "v1"] and u_parts[2:] == p_parts:
+                u_parts = u_parts[2:]
+            elif p_parts[:3] == ["api", "v1", "auth"] and p_parts[3:] == u_parts:
                 p_parts = p_parts[3:]
             elif u_parts[:3] == ["api", "v1", "auth"] and u_parts[3:] == p_parts:
                 u_parts = u_parts[3:]
@@ -777,27 +824,62 @@ except ImportError:
         path_params: Dict[str, Any],
         body_data: Any = None,
         headers: Optional[Dict[str, str]] = None,
+        query_params: Optional[Dict[str, Any]] = None,
         session_override: Optional[Any] = None,
     ) -> Dict[str, Any]:
         import inspect
         sig = inspect.signature(func)
         kwargs: Dict[str, Any] = {}
         headers = headers or {}
+        query_params = query_params or {}
         lower_headers = {k.lower(): v for k, v in headers.items()}
 
         for param_name, param in sig.parameters.items():
             if param_name in path_params:
                 val = path_params[param_name]
                 if param.annotation is int or param.annotation == "int":
-                    val = int(val)
+                    try:
+                        val = int(val)
+                    except (ValueError, TypeError):
+                        pass
                 kwargs[param_name] = val
                 continue
+            elif "id" in path_params and (param_name.endswith("_id") or param_name == "id"):
+                val = path_params["id"]
+                if param.annotation is int or param.annotation == "int":
+                    try:
+                        val = int(val)
+                    except (ValueError, TypeError):
+                        pass
+                kwargs[param_name] = val
+                continue
+            elif param_name == "id":
+                id_candidates = [v for k, v in path_params.items() if k.endswith("_id")]
+                if id_candidates:
+                    val = id_candidates[0]
+                    if param.annotation is int or param.annotation == "int":
+                        try:
+                            val = int(val)
+                        except (ValueError, TypeError):
+                            pass
+                    kwargs[param_name] = val
+                    continue
 
             default = param.default
 
-            if isinstance(default, _ParamInfo):
+            if isinstance(default, _QueryInfo):
+                query_key = default.alias or param_name
+                kwargs[param_name] = query_params.get(query_key, default.default)
+                continue
+
+            if isinstance(default, _HeaderInfo):
                 header_key = (default.alias or param_name).lower()
                 kwargs[param_name] = lower_headers.get(header_key, default.default)
+                continue
+
+            if isinstance(default, _ParamInfo):
+                param_key = (default.alias or param_name).lower()
+                kwargs[param_name] = lower_headers.get(param_key, query_params.get(default.alias or param_name, default.default))
                 continue
 
             if isinstance(default, Depends):
@@ -818,6 +900,7 @@ except ImportError:
                         path_params,
                         body_data=body_data,
                         headers=headers,
+                        query_params=query_params,
                         session_override=session_override,
                     )
                     kwargs[param_name] = dep_func(**dep_kwargs)
@@ -832,6 +915,16 @@ except ImportError:
                         kwargs[param_name] = ann(**body_data)
                     else:
                         kwargs[param_name] = body_data
+                continue
+
+            if param_name in query_params:
+                val = query_params[param_name]
+                if ann is int or ann == "int":
+                    try:
+                        val = int(val)
+                    except (ValueError, TypeError):
+                        pass
+                kwargs[param_name] = val
                 continue
 
             if param_name == "authorization":
@@ -864,6 +957,52 @@ except ImportError:
         def __init__(self, app: Any):
             self.app = app
 
+        def __enter__(self) -> "TestClient":
+            if hasattr(self.app, "lifespan") and self.app.lifespan is not None:
+                try:
+                    ctx = self.app.lifespan(self.app)
+                    if hasattr(ctx, "__aenter__"):
+                        import asyncio
+                        try:
+                            loop = asyncio.get_event_loop()
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                        if loop.is_running():
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                executor.submit(asyncio.run, ctx.__aenter__()).result()
+                        else:
+                            loop.run_until_complete(ctx.__aenter__())
+                        self._lifespan_ctx = ctx
+                    elif hasattr(ctx, "__enter__"):
+                        ctx.__enter__()
+                        self._lifespan_ctx = ctx
+                except Exception:
+                    pass
+            return self
+
+        def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+            if hasattr(self, "_lifespan_ctx") and self._lifespan_ctx is not None:
+                try:
+                    if hasattr(self._lifespan_ctx, "__aexit__"):
+                        import asyncio
+                        try:
+                            loop = asyncio.get_event_loop()
+                        except RuntimeError:
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                        if loop.is_running():
+                            import concurrent.futures
+                            with concurrent.futures.ThreadPoolExecutor() as executor:
+                                executor.submit(asyncio.run, self._lifespan_ctx.__aexit__(exc_type, exc_val, exc_tb)).result()
+                        else:
+                            loop.run_until_complete(self._lifespan_ctx.__aexit__(exc_type, exc_val, exc_tb))
+                    elif hasattr(self._lifespan_ctx, "__exit__"):
+                        self._lifespan_ctx.__exit__(exc_type, exc_val, exc_tb)
+                except Exception:
+                    pass
+
         def request(
             self,
             method: str,
@@ -888,6 +1027,14 @@ except ImportError:
             if not matched_route:
                 return TestResponse(404, {"detail": f"Not Found: {method} {url}"})
 
+            query_dict = dict(params or {})
+            if "?" in url:
+                from urllib.parse import parse_qs, urlsplit
+                parsed_query = parse_qs(urlsplit(url).query)
+                for k, v in parsed_query.items():
+                    if k not in query_dict:
+                        query_dict[k] = v[0] if len(v) == 1 else v
+
             body_content = json if json is not None else data
             try:
                 call_kwargs = _resolve_dependencies(
@@ -895,6 +1042,7 @@ except ImportError:
                     path_params,
                     body_data=body_content,
                     headers=headers,
+                    query_params=query_dict,
                     session_override=session,
                 )
                 res = matched_route.endpoint(**call_kwargs)
@@ -902,6 +1050,10 @@ except ImportError:
                 return TestResponse(status_code, res)
             except HTTPException as exc:
                 return TestResponse(exc.status_code, {"detail": exc.detail}, headers=exc.headers)
+            except pydantic.ValidationError as exc:
+                return TestResponse(422, {"detail": exc.errors()})
+            except ValueError as exc:
+                return TestResponse(400, {"detail": str(exc)})
             except Exception as exc:
                 return TestResponse(500, {"detail": str(exc)})
 
@@ -926,7 +1078,16 @@ except ImportError:
     fastapi_mod.HTTPException = HTTPException
     fastapi_mod.Query = Query
     fastapi_mod.status = status
+    fastapi_mod.CORSMiddleware = CORSMiddleware
     sys.modules["fastapi"] = fastapi_mod
+
+    middleware_mod = types.ModuleType("fastapi.middleware")
+    cors_mod = types.ModuleType("fastapi.middleware.cors")
+    cors_mod.CORSMiddleware = CORSMiddleware
+    middleware_mod.cors = cors_mod
+    sys.modules["fastapi.middleware"] = middleware_mod
+    sys.modules["fastapi.middleware.cors"] = cors_mod
+    fastapi_mod.middleware = middleware_mod
 
     security_mod = types.ModuleType("fastapi.security")
     security_mod.OAuth2PasswordBearer = OAuth2PasswordBearer

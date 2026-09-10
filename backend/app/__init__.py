@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Backend application package for tro."""
 
+from .api import router as api_router
 from .auth import (
     get_current_user,
     require_landlord,
@@ -22,6 +23,7 @@ from .compat import (
     status,
 )
 from .database import engine, get_session, init_db
+from .main import app
 from .models import (
     DEFAULT_TIERS_JSON,
     Invoice,
@@ -34,10 +36,15 @@ from .models import (
     get_default_tiers,
 )
 from .schemas import (
+    InvoiceCalculateRequest,
+    InvoiceOut,
+    MeterReadingCreate,
+    MeterReadingOut,
     PropertyCreate,
     PropertyOut,
     RoomCreate,
     RoomOut,
+    SystemConfigOut,
     SystemConfigUpdate,
     TokenResponse,
     UserLogin,
@@ -52,6 +59,7 @@ from .security import (
 )
 
 __all__ = [
+    "app",
     "SQLModel",
     "Field",
     "Session",
@@ -88,7 +96,13 @@ __all__ = [
     "RoomCreate",
     "RoomOut",
     "SystemConfigUpdate",
+    "SystemConfigOut",
+    "MeterReadingCreate",
+    "MeterReadingOut",
+    "InvoiceCalculateRequest",
+    "InvoiceOut",
     "auth_router",
+    "api_router",
     "get_current_user",
     "require_landlord",
     "require_tenant",
