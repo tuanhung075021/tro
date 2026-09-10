@@ -2,7 +2,25 @@
 # SPDX-License-Identifier: MIT
 """Backend application package for tro."""
 
-from .compat import Field, Session, SQLModel, col, create_engine, select
+from .auth import (
+    get_current_user,
+    require_landlord,
+    require_tenant,
+    router as auth_router,
+)
+from .compat import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    Field,
+    HTTPException,
+    Session,
+    SQLModel,
+    col,
+    create_engine,
+    select,
+    status,
+)
 from .database import engine, get_session, init_db
 from .models import (
     DEFAULT_TIERS_JSON,
@@ -15,6 +33,23 @@ from .models import (
     generate_invite_code,
     get_default_tiers,
 )
+from .schemas import (
+    PropertyCreate,
+    PropertyOut,
+    RoomCreate,
+    RoomOut,
+    SystemConfigUpdate,
+    TokenResponse,
+    UserLogin,
+    UserOut,
+    UserRegister,
+)
+from .security import (
+    create_access_token,
+    decode_access_token,
+    get_password_hash,
+    verify_password,
+)
 
 __all__ = [
     "SQLModel",
@@ -23,6 +58,11 @@ __all__ = [
     "create_engine",
     "select",
     "col",
+    "APIRouter",
+    "Depends",
+    "FastAPI",
+    "HTTPException",
+    "status",
     "engine",
     "get_session",
     "init_db",
@@ -35,4 +75,21 @@ __all__ = [
     "generate_invite_code",
     "get_default_tiers",
     "DEFAULT_TIERS_JSON",
+    "get_password_hash",
+    "verify_password",
+    "create_access_token",
+    "decode_access_token",
+    "UserRegister",
+    "UserLogin",
+    "TokenResponse",
+    "UserOut",
+    "PropertyCreate",
+    "PropertyOut",
+    "RoomCreate",
+    "RoomOut",
+    "SystemConfigUpdate",
+    "auth_router",
+    "get_current_user",
+    "require_landlord",
+    "require_tenant",
 ]

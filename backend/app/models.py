@@ -72,8 +72,25 @@ class Room(SQLModel, table=True):
     room_number: str
     property_id: Optional[int] = Field(default=None, foreign_key="property.id")
     invite_code: str = Field(default_factory=lambda: generate_invite_code(8), unique=True, index=True)
-    status: str = Field(default="active")  # "active", "empty"
+    status: str = Field(default="empty")  # "active", "empty"
     current_people_count: int = Field(default=1)
+    tenant_id: Optional[int] = Field(default=None, foreign_key="user.id")
+
+    def __init__(self, **data: Any):
+        if not data.get("invite_code"):
+            data["invite_code"] = generate_invite_code(8)
+        super().__init__(**data)
+
+    def assign_tenant(self, tenant_id: int) -> None:
+        """Assign a tenant to the room and set status to active."""
+        self.tenant_id = tenant_id
+        self.status = "active"
+
+    def remove_tenant(self) -> None:
+        """Remove tenant from room, set status to empty, and generate a new invite code."""
+        self.tenant_id = None
+        self.status = "empty"
+        self.invite_code = generate_invite_code(8)
 
 
 class SystemConfig(SQLModel, table=True):

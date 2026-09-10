@@ -12,7 +12,7 @@ import os
 import sqlite3
 import sys
 import types
-from typing import Any, Callable, ClassVar, Dict, Generator, List, Optional, Set, Type, Union, get_args, get_origin
+from typing import Any, Callable, ClassVar, Dict, Generator, List, Optional, Set, Tuple, Type, Union, get_args, get_origin
 import pydantic
 from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo
@@ -536,3 +536,406 @@ except ImportError:
     mod.select = select
     mod.col = col
     sys.modules["sqlmodel"] = mod
+
+
+# ============================================================================
+# FastAPI Compatibility Layer
+# ============================================================================
+
+try:
+    import fastapi
+    from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
+    from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer, OAuth2PasswordBearer
+    FASTAPI_INSTALLED = True
+    try:
+        from fastapi.testclient import TestClient
+    except ImportError:
+        TestClient = None  # type: ignore[assignment, misc]
+except ImportError:
+    FASTAPI_INSTALLED = False
+
+    class HTTPException(Exception):
+        """HTTP exception carrying status code, message detail, and headers."""
+        def __init__(
+            self,
+            status_code: int,
+            detail: Any = None,
+            headers: Optional[Dict[str, str]] = None,
+        ):
+            self.status_code = status_code
+            self.detail = detail
+            self.headers = headers or {}
+            super().__init__(f"{status_code}: {detail}")
+
+    class _HttpStatus:
+        """Standard HTTP status codes matching FastAPI status definitions."""
+        HTTP_200_OK = 200
+        HTTP_201_CREATED = 201
+        HTTP_202_ACCEPTED = 202
+        HTTP_204_NO_CONTENT = 204
+        HTTP_400_BAD_REQUEST = 400
+        HTTP_401_UNAUTHORIZED = 401
+        HTTP_403_FORBIDDEN = 403
+        HTTP_404_NOT_FOUND = 404
+        HTTP_405_METHOD_NOT_ALLOWED = 405
+        HTTP_409_CONFLICT = 409
+        HTTP_422_UNPROCESSABLE_ENTITY = 422
+        HTTP_500_INTERNAL_SERVER_ERROR = 500
+
+    status = _HttpStatus()
+
+    class Depends:
+        """Dependency injection marker compatible with FastAPI Depends."""
+        def __init__(self, dependency: Optional[Callable[..., Any]] = None, use_cache: bool = True):
+            self.dependency = dependency
+            self.use_cache = use_cache
+
+    class _ParamInfo:
+        """Header and Query parameter specification placeholder."""
+        def __init__(self, default: Any = None, alias: Optional[str] = None, **kwargs: Any):
+            self.default = default
+            self.alias = alias
+            self.extra = kwargs
+
+    def Header(default: Any = None, *, alias: Optional[str] = None, **kwargs: Any) -> Any:
+        return _ParamInfo(default=default, alias=alias, **kwargs)
+
+    def Query(default: Any = None, *, alias: Optional[str] = None, **kwargs: Any) -> Any:
+        return _ParamInfo(default=default, alias=alias, **kwargs)
+
+    class OAuth2PasswordBearer:
+        """OAuth2 password bearer scheme placeholder."""
+        def __init__(self, tokenUrl: str, auto_error: bool = True):
+            self.tokenUrl = tokenUrl
+            self.auto_error = auto_error
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Optional[str]:
+            return None
+
+    class HTTPBearer:
+        """HTTP bearer scheme placeholder."""
+        def __init__(self, auto_error: bool = True):
+            self.auto_error = auto_error
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Optional[str]:
+            return None
+
+    class Route:
+        """Endpoint route descriptor."""
+        def __init__(
+            self,
+            path: str,
+            endpoint: Callable[..., Any],
+            methods: List[str],
+            response_model: Optional[Any] = None,
+            status_code: int = 200,
+            **kwargs: Any,
+        ):
+            self.path = path
+            self.endpoint = endpoint
+            self.methods = [m.upper() for m in methods]
+            self.response_model = response_model
+            self.status_code = status_code
+            self.kwargs = kwargs
+
+    class APIRouter:
+        """Lightweight APIRouter recording endpoints and paths."""
+        def __init__(self, prefix: str = "", tags: Optional[List[str]] = None, **kwargs: Any):
+            self.prefix = prefix
+            self.tags = tags or []
+            self.routes: List[Route] = []
+
+        def add_api_route(
+            self,
+            path: str,
+            endpoint: Callable[..., Any],
+            methods: Optional[List[str]] = None,
+            response_model: Optional[Any] = None,
+            status_code: int = 200,
+            **kwargs: Any,
+        ) -> None:
+            full_path = self.prefix + path if not path.startswith(self.prefix) else path
+            route = Route(
+                full_path,
+                endpoint,
+                methods or ["GET"],
+                response_model=response_model,
+                status_code=status_code,
+                **kwargs,
+            )
+            self.routes.append(route)
+
+        def get(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.add_api_route(path, func, methods=["GET"], response_model=response_model, status_code=status_code, **kwargs)
+                return func
+            return decorator
+
+        def post(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.add_api_route(path, func, methods=["POST"], response_model=response_model, status_code=status_code, **kwargs)
+                return func
+            return decorator
+
+        def put(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.add_api_route(path, func, methods=["PUT"], response_model=response_model, status_code=status_code, **kwargs)
+                return func
+            return decorator
+
+        def delete(self, path: str, response_model: Optional[Any] = None, status_code: int = 200, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.add_api_route(path, func, methods=["DELETE"], response_model=response_model, status_code=status_code, **kwargs)
+                return func
+            return decorator
+
+    class FastAPI:
+        """Lightweight FastAPI application registering routes."""
+        def __init__(self, title: str = "tro API", **kwargs: Any):
+            self.title = title
+            self.routes: List[Route] = []
+
+        def include_router(self, router: APIRouter, prefix: str = "", **kwargs: Any) -> None:
+            for r in router.routes:
+                target_path = r.path
+                if prefix and not target_path.startswith(prefix):
+                    target_path = prefix + target_path
+                self.routes.append(
+                    Route(
+                        target_path,
+                        r.endpoint,
+                        r.methods,
+                        response_model=r.response_model,
+                        status_code=r.status_code,
+                        **r.kwargs,
+                    )
+                )
+
+        def get(self, path: str, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.routes.append(Route(path, func, ["GET"], **kwargs))
+                return func
+            return decorator
+
+        def post(self, path: str, **kwargs: Any):
+            def decorator(func: Callable[..., Any]):
+                self.routes.append(Route(path, func, ["POST"], **kwargs))
+                return func
+            return decorator
+
+    class TestResponse:
+        """Simulated HTTP response for TestClient."""
+        def __init__(self, status_code: int, data: Any = None, headers: Optional[Dict[str, str]] = None):
+            self.status_code = status_code
+            self._data = data
+            self.headers = headers or {}
+
+        def json(self) -> Any:
+            if isinstance(self._data, (dict, list)):
+                return self._data
+            if hasattr(self._data, "model_dump"):
+                return self._data.model_dump(mode="json")
+            if hasattr(self._data, "dict"):
+                return self._data.dict()
+            return self._data
+
+        @property
+        def text(self) -> str:
+            if isinstance(self._data, str):
+                return self._data
+            return json.dumps(self.json(), default=str)
+
+    def _match_path(pattern: str, url: str) -> Tuple[bool, Dict[str, Any]]:
+        p = pattern.strip("/")
+        u = url.split("?")[0].strip("/")
+        p_parts = [x for x in p.split("/") if x]
+        u_parts = [x for x in u.split("/") if x]
+
+        # Handle prefix difference like api/v1/auth
+        if len(p_parts) != len(u_parts):
+            if p_parts[:3] == ["api", "v1", "auth"] and p_parts[3:] == u_parts:
+                p_parts = p_parts[3:]
+            elif u_parts[:3] == ["api", "v1", "auth"] and u_parts[3:] == p_parts:
+                u_parts = u_parts[3:]
+            else:
+                return False, {}
+
+        if len(p_parts) != len(u_parts):
+            return False, {}
+
+        params: Dict[str, Any] = {}
+        for p_seg, u_seg in zip(p_parts, u_parts):
+            if p_seg.startswith("{") and p_seg.endswith("}"):
+                param_name = p_seg[1:-1]
+                params[param_name] = u_seg
+            elif p_seg != u_seg:
+                return False, {}
+        return True, params
+
+    def _resolve_dependencies(
+        func: Callable[..., Any],
+        path_params: Dict[str, Any],
+        body_data: Any = None,
+        headers: Optional[Dict[str, str]] = None,
+        session_override: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        import inspect
+        sig = inspect.signature(func)
+        kwargs: Dict[str, Any] = {}
+        headers = headers or {}
+        lower_headers = {k.lower(): v for k, v in headers.items()}
+
+        for param_name, param in sig.parameters.items():
+            if param_name in path_params:
+                val = path_params[param_name]
+                if param.annotation is int or param.annotation == "int":
+                    val = int(val)
+                kwargs[param_name] = val
+                continue
+
+            default = param.default
+
+            if isinstance(default, _ParamInfo):
+                header_key = (default.alias or param_name).lower()
+                kwargs[param_name] = lower_headers.get(header_key, default.default)
+                continue
+
+            if isinstance(default, Depends):
+                dep_func = default.dependency
+                if dep_func is None:
+                    kwargs[param_name] = None
+                    continue
+                if getattr(dep_func, "__name__", "") == "get_session":
+                    if session_override is not None:
+                        kwargs[param_name] = session_override
+                    else:
+                        from .database import get_session
+                        gen = get_session()
+                        kwargs[param_name] = next(gen)
+                else:
+                    dep_kwargs = _resolve_dependencies(
+                        dep_func,
+                        path_params,
+                        body_data=body_data,
+                        headers=headers,
+                        session_override=session_override,
+                    )
+                    kwargs[param_name] = dep_func(**dep_kwargs)
+                continue
+
+            ann = param.annotation
+            if hasattr(ann, "model_validate") or (isinstance(ann, type) and issubclass(ann, BaseModel)):
+                if body_data is not None:
+                    if isinstance(body_data, ann):
+                        kwargs[param_name] = body_data
+                    elif isinstance(body_data, dict):
+                        kwargs[param_name] = ann(**body_data)
+                    else:
+                        kwargs[param_name] = body_data
+                continue
+
+            if param_name == "authorization":
+                kwargs[param_name] = lower_headers.get("authorization")
+                continue
+            if param_name == "token":
+                auth_val = lower_headers.get("authorization", "")
+                if auth_val.startswith("Bearer "):
+                    kwargs[param_name] = auth_val[7:].strip()
+                else:
+                    kwargs[param_name] = auth_val or None
+                continue
+
+            if param_name == "session":
+                if session_override is not None:
+                    kwargs[param_name] = session_override
+                else:
+                    from .database import get_session
+                    gen = get_session()
+                    kwargs[param_name] = next(gen)
+                continue
+
+            if default is not inspect.Parameter.empty:
+                kwargs[param_name] = default
+
+        return kwargs
+
+    class TestClient:
+        """Standalone HTTP test client dispatching requests to FastAPI/APIRouter routes."""
+        def __init__(self, app: Any):
+            self.app = app
+
+        def request(
+            self,
+            method: str,
+            url: str,
+            json: Optional[Any] = None,
+            data: Optional[Any] = None,
+            headers: Optional[Dict[str, str]] = None,
+            params: Optional[Dict[str, Any]] = None,
+            session: Optional[Any] = None,
+            **kwargs: Any,
+        ) -> TestResponse:
+            matched_route = None
+            path_params: Dict[str, Any] = {}
+            for r in self.app.routes:
+                if method.upper() in r.methods:
+                    m, p = _match_path(r.path, url)
+                    if m:
+                        matched_route = r
+                        path_params = p
+                        break
+
+            if not matched_route:
+                return TestResponse(404, {"detail": f"Not Found: {method} {url}"})
+
+            body_content = json if json is not None else data
+            try:
+                call_kwargs = _resolve_dependencies(
+                    matched_route.endpoint,
+                    path_params,
+                    body_data=body_content,
+                    headers=headers,
+                    session_override=session,
+                )
+                res = matched_route.endpoint(**call_kwargs)
+                status_code = matched_route.status_code or 200
+                return TestResponse(status_code, res)
+            except HTTPException as exc:
+                return TestResponse(exc.status_code, {"detail": exc.detail}, headers=exc.headers)
+            except Exception as exc:
+                return TestResponse(500, {"detail": str(exc)})
+
+        def get(self, url: str, **kwargs: Any) -> TestResponse:
+            return self.request("GET", url, **kwargs)
+
+        def post(self, url: str, **kwargs: Any) -> TestResponse:
+            return self.request("POST", url, **kwargs)
+
+        def put(self, url: str, **kwargs: Any) -> TestResponse:
+            return self.request("PUT", url, **kwargs)
+
+        def delete(self, url: str, **kwargs: Any) -> TestResponse:
+            return self.request("DELETE", url, **kwargs)
+
+    # Register virtual fastapi modules in sys.modules
+    fastapi_mod = types.ModuleType("fastapi")
+    fastapi_mod.APIRouter = APIRouter
+    fastapi_mod.Depends = Depends
+    fastapi_mod.FastAPI = FastAPI
+    fastapi_mod.Header = Header
+    fastapi_mod.HTTPException = HTTPException
+    fastapi_mod.Query = Query
+    fastapi_mod.status = status
+    sys.modules["fastapi"] = fastapi_mod
+
+    security_mod = types.ModuleType("fastapi.security")
+    security_mod.OAuth2PasswordBearer = OAuth2PasswordBearer
+    security_mod.HTTPBearer = HTTPBearer
+    sys.modules["fastapi.security"] = security_mod
+    fastapi_mod.security = security_mod
+
+    testclient_mod = types.ModuleType("fastapi.testclient")
+    testclient_mod.TestClient = TestClient
+    sys.modules["fastapi.testclient"] = testclient_mod
+    fastapi_mod.testclient = testclient_mod
+
