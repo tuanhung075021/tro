@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+*.egg-info/
+.pytest_cache/
+
+# Node/Web
+node_modules/
+npm-debug.log*
+dist/
+.env.local
+.env.*.local
+
+# Database & Runtime
+*.db
+*.sqlite3
+*.log
+
+# IDE & OS
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
+
+# Agent & Metadata
+.agents/
+ORIGINAL_REQUEST.md
+
+# Temporary & Lock files
+.~lock.*
+*.tmp
+*~
