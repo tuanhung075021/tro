@@ -132,7 +132,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         self.assertIn(" * SPDX-License-Identifier: MIT", js_header)
         self.assertTrue(js_header.endswith("\n */"))
 
-        for ext in [".ts", ".tsx", ".css"]:
+        for ext in [".jsx", ".ts", ".tsx", ".css"]:
             self.assertEqual(add_license_headers.get_license_header(ext), js_header)
 
         with self.assertRaises(ValueError):
@@ -197,7 +197,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
         # Hash comment in JS / TS / CSS must NOT be accepted
         js_hash_style = "# Copyright (c) 2026 tro Contributors\n# SPDX-License-Identifier: MIT\n"
-        for ext in [".js", ".ts", ".tsx", ".css"]:
+        for ext in [".js", ".jsx", ".ts", ".tsx", ".css"]:
             self.assertFalse(
                 add_license_headers.has_license_header(js_hash_style, ext),
                 f"Hash comments in {ext} files must be rejected",
@@ -249,8 +249,8 @@ class TestLicenseHeaderScript(unittest.TestCase):
         # Idempotency
         self.assertEqual(updated, add_license_headers.add_header_to_content(updated, ".js"))
 
-    def test_add_header_to_ts_tsx_css_files(self):
-        for ext in [".ts", ".tsx", ".css"]:
+    def test_add_header_to_jsx_ts_tsx_css_files(self):
+        for ext in [".jsx", ".ts", ".tsx", ".css"]:
             original = "/* content */\n"
             updated = add_license_headers.add_header_to_content(original, ext)
             self.assertTrue(add_license_headers.has_license_header(updated, ext))
@@ -358,13 +358,14 @@ class TestLicenseHeaderScript(unittest.TestCase):
         valid_dir = self.temp_path / "valid_src"
         valid_dir.mkdir(parents=True, exist_ok=True)
         py_file = valid_dir / "app.py"
+        jsx_file = valid_dir / "view.jsx"
         ts_file = valid_dir / "index.ts"
         tsx_file = valid_dir / "component.tsx"
         css_file = valid_dir / "style.css"
         sh_file = valid_dir / "run.sh"
         txt_file = valid_dir / "notes.txt"
 
-        for f in [py_file, ts_file, tsx_file, css_file, sh_file]:
+        for f in [py_file, jsx_file, ts_file, tsx_file, css_file, sh_file]:
             f.write_text("/* dummy */", encoding="utf-8")
         txt_file.write_text("text file", encoding="utf-8")
 
@@ -372,6 +373,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         found_names = [f.name for f in found]
 
         self.assertIn("app.py", found_names)
+        self.assertIn("view.jsx", found_names)
         self.assertIn("index.ts", found_names)
         self.assertIn("component.tsx", found_names)
         self.assertIn("style.css", found_names)

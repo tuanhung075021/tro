@@ -11,7 +11,7 @@ from pathlib import Path
 import sys
 
 PYTHON_SHELL_EXTENSIONS = {".py", ".sh"}
-JS_TS_CSS_EXTENSIONS = {".js", ".ts", ".tsx", ".css"}
+JS_TS_CSS_EXTENSIONS = {".js", ".jsx", ".ts", ".tsx", ".css"}
 SUPPORTED_EXTENSIONS = PYTHON_SHELL_EXTENSIONS | JS_TS_CSS_EXTENSIONS
 
 IGNORED_DIRS = {

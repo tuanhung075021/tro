@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2026 tro Contributors
+ * SPDX-License-Identifier: MIT
+ */
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-800 antialiased font-sans;
+  }
+}
