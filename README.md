@@ -1,5 +1,5 @@
 # tro — Hệ thống tính toán và đối chiếu chi phí điện nước nhà trọ minh bạch
-
+[![CI Pipeline](https://github.com/tuanhung075021/tro/actions/workflows/ci.yml/badge.svg)](https://github.com/tuanhung075021/tro/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: >=3.10](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Node.js: >=18](https://img.shields.io/badge/Node.js-18%2B-green.svg)](https://nodejs.org/)

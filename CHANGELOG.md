@@ -8,6 +8,9 @@ Tất cả những thay đổi đáng chú ý của dự án **tro** sẽ đư�
 
 ## [Unreleased]
 
+### Added
+- ci: Thiết lập GitHub Actions tự động kiểm tra License Compliance và Unit Tests trên mỗi commit.
+
 ### Planned
 - Xây dựng Core Engine tính toán điện bậc thang và định mức theo Thông tư 60/2025/TT-BCT và Quyết định 1279/QĐ-BCT.
 - Phát triển RESTful API backend bằng FastAPI phục vụ quản lý phòng, cơ sở và tính tiền điện nước.
