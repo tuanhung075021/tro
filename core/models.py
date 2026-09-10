@@ -5,7 +5,7 @@
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -90,3 +90,66 @@ class DisputeResult:
     actual_amount: Decimal
     diff_amount: Decimal
     is_overcharged: bool
+
+
+class LossAllocationMethod(str, Enum):
+    """Method for allocating common/loss electricity from master meter."""
+    PROPORTIONAL = "PROPORTIONAL"
+    EQUAL = "EQUAL"
+
+
+@dataclass
+class SubMeterReading:
+    """Reading from a sub-meter belonging to a specific room."""
+    room_id: str
+    consumption: Decimal
+
+    def __post_init__(self):
+        if not isinstance(self.room_id, str) or not self.room_id.strip():
+            raise ValueError("room_id must be a non-empty string.")
+        self.room_id = self.room_id.strip()
+        if not isinstance(self.consumption, Decimal):
+            self.consumption = Decimal(str(self.consumption))
+        if self.consumption < Decimal("0"):
+            raise ValueError(f"Sub-meter consumption cannot be negative for room '{self.room_id}'.")
+
+
+@dataclass
+class SharedMeterResult:
+    """Result of allocating shared master meter loss/common usage."""
+    master_consumption: Decimal
+    total_sub_consumption: Decimal
+    loss_consumption: Decimal
+    allocations: Dict[str, Decimal]
+
+
+@dataclass
+class TenantStayPeriod:
+    """Record of a tenant's actual stay duration within a billing period."""
+    tenant_name: str
+    days_stayed: int
+
+    def __post_init__(self):
+        if not isinstance(self.tenant_name, str) or not self.tenant_name.strip():
+            raise ValueError("tenant_name must be a non-empty string.")
+        self.tenant_name = self.tenant_name.strip()
+        if isinstance(self.days_stayed, bool):
+            raise TypeError("days_stayed must be an integer, not boolean.")
+        if not isinstance(self.days_stayed, int):
+            try:
+                val = float(self.days_stayed)
+                if not val.is_integer():
+                    raise ValueError("days_stayed must be an integer.")
+                self.days_stayed = int(val)
+            except (ValueError, TypeError):
+                raise ValueError("days_stayed must be an integer.")
+        if self.days_stayed < 0:
+            raise ValueError("days_stayed cannot be negative.")
+
+
+@dataclass
+class ProratedQuotaResult:
+    """Result of calculating prorated electricity quota based on actual days stayed."""
+    total_days_in_month: int
+    effective_quota: Decimal
+    details: List[Dict[str, Any]]

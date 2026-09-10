@@ -13,6 +13,11 @@ from core.models import (
     DisputeResult,
     ElectricityConfig,
     ElectricityResult,
+    LossAllocationMethod,
+    ProratedQuotaResult,
+    SharedMeterResult,
+    SubMeterReading,
+    TenantStayPeriod,
     TierBreakdown,
     WaterConfig,
     WaterResult,
@@ -224,4 +229,148 @@ def calculate_dispute(
         actual_amount=d_actual,
         diff_amount=diff,
         is_overcharged=is_overcharged,
+    )
+
+
+def allocate_shared_meter(
+    master_consumption: Decimal,
+    sub_readings: list[SubMeterReading],
+    method: LossAllocationMethod = LossAllocationMethod.PROPORTIONAL,
+) -> SharedMeterResult:
+    """Allocates master meter consumption difference (loss/common area) to individual rooms.
+
+    Args:
+        master_consumption: Total consumption recorded by the master meter.
+        sub_readings: List of sub-meter readings for individual rooms.
+        method: Allocation method (PROPORTIONAL based on consumption or EQUAL per room).
+
+    Returns:
+        SharedMeterResult containing breakdown of total consumption, loss, and allocations.
+
+    Raises:
+        ValueError: If master_consumption < total_sub, negative readings, or sub_readings is empty.
+    """
+    d_master = _to_decimal(master_consumption)
+    if d_master < Decimal("0"):
+        raise ValueError("Master meter consumption cannot be negative.")
+
+    if not sub_readings:
+        raise ValueError("sub_readings cannot be empty.")
+
+    # Normalize allocation method (support case-insensitive string or enum)
+    if isinstance(method, str):
+        try:
+            method = LossAllocationMethod(method.upper())
+        except ValueError:
+            raise ValueError(f"Unsupported allocation method: {method}")
+    elif not isinstance(method, LossAllocationMethod):
+        raise ValueError(f"Unsupported allocation method: {method}")
+
+    room_ids = [r.room_id for r in sub_readings]
+    if len(room_ids) != len(set(room_ids)):
+        raise ValueError("Duplicate room_id found in sub_readings.")
+
+    for r in sub_readings:
+        if _to_decimal(r.consumption) < Decimal("0"):
+            raise ValueError(f"Sub-meter consumption cannot be negative for room '{r.room_id}'.")
+
+    total_sub = sum(_to_decimal(r.consumption) for r in sub_readings)
+
+    if d_master < total_sub:
+        raise ValueError(
+            f"Master consumption ({d_master}) cannot be less than total sub-meter consumption ({total_sub})."
+        )
+
+    loss_consumption = d_master - total_sub
+    num_rooms = Decimal(len(sub_readings))
+    allocations: dict[str, Decimal] = {}
+
+    if method == LossAllocationMethod.PROPORTIONAL:
+        if total_sub == Decimal("0"):
+            equal_share = loss_consumption / num_rooms
+            allocations = {r.room_id: equal_share for r in sub_readings}
+        else:
+            allocations = {
+                r.room_id: (_to_decimal(r.consumption) * loss_consumption) / total_sub
+                for r in sub_readings
+            }
+    elif method == LossAllocationMethod.EQUAL:
+        equal_share = loss_consumption / num_rooms
+        allocations = {r.room_id: equal_share for r in sub_readings}
+
+    return SharedMeterResult(
+        master_consumption=d_master,
+        total_sub_consumption=total_sub,
+        loss_consumption=loss_consumption,
+        allocations=allocations,
+    )
+
+
+def calculate_prorated_quota(
+    days_in_month: int,
+    tenant_stays: list[TenantStayPeriod],
+) -> ProratedQuotaResult:
+    """Calculates effective electricity quota prorated by actual residency days.
+
+    Formula: effective_quota = sum(days_stayed) / (4 * days_in_month)
+
+    Args:
+        days_in_month: Number of calendar days in the billing cycle (e.g. 28, 29, 30, 31).
+        tenant_stays: List of tenant stay records within the month.
+
+    Returns:
+        ProratedQuotaResult with effective_quota and detailed breakdown per tenant.
+
+    Raises:
+        ValueError: If days_in_month <= 0, days_stayed < 0, or tenant days exceed days_in_month.
+        TypeError: If days_in_month is boolean or not an integer.
+    """
+    if isinstance(days_in_month, bool) or not isinstance(days_in_month, int):
+        raise TypeError("days_in_month must be an integer.")
+
+    if days_in_month <= 0:
+        raise ValueError("days_in_month must be greater than zero.")
+
+    if not tenant_stays:
+        return ProratedQuotaResult(
+            total_days_in_month=days_in_month,
+            effective_quota=Decimal("0"),
+            details=[],
+        )
+
+    tenant_cumulative_days: dict[str, int] = {}
+    for stay in tenant_stays:
+        if stay.days_stayed < 0:
+            raise ValueError(f"days_stayed cannot be negative for tenant '{stay.tenant_name}'.")
+        if stay.days_stayed > days_in_month:
+            raise ValueError(
+                f"Tenant '{stay.tenant_name}' stayed {stay.days_stayed} days, "
+                f"which exceeds days in month ({days_in_month})."
+            )
+        tenant_cumulative_days[stay.tenant_name] = (
+            tenant_cumulative_days.get(stay.tenant_name, 0) + stay.days_stayed
+        )
+        if tenant_cumulative_days[stay.tenant_name] > days_in_month:
+            raise ValueError(
+                f"Cumulative days stayed for tenant '{stay.tenant_name}' "
+                f"({tenant_cumulative_days[stay.tenant_name]}) exceeds days in month ({days_in_month})."
+            )
+
+    total_person_days = sum(Decimal(stay.days_stayed) for stay in tenant_stays)
+    divisor = Decimal("4") * Decimal(days_in_month)
+    effective_quota = total_person_days / divisor
+
+    details = [
+        {
+            "tenant_name": stay.tenant_name,
+            "days_stayed": stay.days_stayed,
+            "effective_quota": Decimal(stay.days_stayed) / divisor,
+        }
+        for stay in tenant_stays
+    ]
+
+    return ProratedQuotaResult(
+        total_days_in_month=days_in_month,
+        effective_quota=effective_quota,
+        details=details,
     )
