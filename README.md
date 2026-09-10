@@ -1,4 +1,4 @@
-# tro — Hệ thống tính toán và đối chiếu chi phí điện nước nhà trọ minh bạch
+# tro. — Hệ thống tính toán và đối chiếu chi phí điện nước nhà trọ minh bạch
 [![CI Pipeline](https://github.com/tuanhung075021/tro/actions/workflows/ci.yml/badge.svg)](https://github.com/tuanhung075021/tro/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python: >=3.10](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
@@ -6,7 +6,7 @@
 [![Code Style: FOSS](https://img.shields.io/badge/FOSS-Compliant-brightgreen.svg)](CONTRIBUTING.md)
 [![SPDX License Identifier](https://img.shields.io/badge/SPDX--License--Identifier-MIT-blue.svg)](LICENSE)
 
-> **tro** là dự án phần mềm nguồn mở (FOSS) phục vụ cộng đồng người thuê nhà và các chủ cơ sở cho thuê, giúp tính toán chính xác chi phí điện, nước sinh hoạt theo đúng quy định pháp luật hiện hành của Việt Nam, cung cấp cơ chế đối chiếu minh bạch từng bậc giá và phát hiện các khoản thu vượt quy định.
+> **tro.** là dự án phần mềm nguồn mở (FOSS) phục vụ cộng đồng người thuê nhà và các chủ cơ sở cho thuê, giúp tính toán chính xác chi phí điện, nước sinh hoạt theo đúng quy định pháp luật hiện hành của Việt Nam, cung cấp cơ chế đối chiếu minh bạch từng bậc giá và phát hiện các khoản thu vượt quy định.
 
 ---
 
@@ -17,7 +17,7 @@ Trên thực tế tại các đô thị lớn, sinh viên và người lao độ
 - Không nắm rõ biểu giá bậc thang và số định mức mình được hưởng theo quy định.
 - Thiếu công cụ độc lập, trực quan để diễn giải chi tiết cách tính hóa đơn và tính toán số tiền chênh lệch đang phải trả thừa.
 
-**Dự án `tro` ra đời nhằm giải quyết triệt để vấn đề trên**:
+**Dự án `tro.` ra đời nhằm giải quyết triệt để vấn đề trên**:
 1. **Minh bạch hóa cách tính**: Cung cấp công cụ tính toán chính xác tiền điện, nước theo định mức và biểu giá bậc thang, diễn giải chi tiết từng bậc sản lượng và tiền thuế VAT.
 2. **Đối chiếu độc lập**: So sánh giữa phương án tính đúng quy định (có định mức hoặc áp bậc 3) với số tiền thực thu của chủ nhà để chỉ rõ khoản chênh lệch.
 3. **Tuân thủ pháp luật**: Giúp chủ nhà trọ nắm bắt quy định, kê khai định mức cho người thuê và định giá đúng luật, tránh các mức phạt hành chính nghiêm khắc.

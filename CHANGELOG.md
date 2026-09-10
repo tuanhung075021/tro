@@ -1,12 +1,15 @@
 # Changelog
 
-Tất cả những thay đổi đáng chú ý của dự án **tro** sẽ được ghi chép trong tài liệu này.
+Tất cả những thay đổi đáng chú ý của dự án **tro.** sẽ được ghi chép trong tài liệu này.
 
 Định dạng tài liệu dựa trên [Keep a Changelog](https://keepachangelog.com/vi/1.0.0/), và dự án này tuân thủ theo [Semantic Versioning](https://semver.org/lang/vi/).
 
 ---
 
 ## [Unreleased]
+
+### Changed
+- refactor: Cập nhật định danh thương hiệu hệ thống thành **tro.**
 
 ### Added
 - ci: Thiết lập GitHub Actions tự động kiểm tra License Compliance và Unit Tests trên mỗi commit.

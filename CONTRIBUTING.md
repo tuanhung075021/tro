@@ -1,6 +1,6 @@
 # Hướng dẫn đóng góp (Contributing Guidelines)
 
-Cảm ơn bạn đã quan tâm đến dự án mã nguồn mở **tro**! Chúng tôi luôn hoan nghênh các đóng góp từ cộng đồng, từ việc sửa lỗi nhỏ, cải thiện tài liệu đến việc đề xuất các tính năng mới.
+Cảm ơn bạn đã quan tâm đến dự án mã nguồn mở **tro.**! Chúng tôi luôn hoan nghênh các đóng góp từ cộng đồng, từ việc sửa lỗi nhỏ, cải thiện tài liệu đến việc đề xuất các tính năng mới.
 
 ---
 
