@@ -1,13 +1,14 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
 """
-License Header Management Tool for tro project.
+License Header Management Tool for tro. project.
 Checks and automatically inserts SPDX MIT License headers in source files.
 """
 
 import argparse
 import os
 from pathlib import Path
+import re
 import sys
 
 PYTHON_SHELL_EXTENSIONS = {".py", ".sh"}
@@ -27,16 +28,27 @@ IGNORED_DIRS = {
 }
 
 PYTHON_SHELL_HEADER = (
-    "# Copyright (c) 2026 tro Contributors\n"
+    "# Copyright (c) 2026 tro. Contributors\n"
     "# SPDX-License-Identifier: MIT"
 )
 
 JS_TS_CSS_HEADER = (
     "/*\n"
-    " * Copyright (c) 2026 tro Contributors\n"
+    " * Copyright (c) 2026 tro. Contributors\n"
     " * SPDX-License-Identifier: MIT\n"
     " */"
 )
+
+COPYRIGHT_TEXT = "Copyright (c) 2026 tro. Contributors"
+COPYRIGHT_REGEX = re.compile(
+    r"Copyright\s+(?:\([cC]\)|©)?\s*(?:\d{4}(?:\s*[-–—]\s*\d{4})?,?\s*)*tro\.\s+Contributors",
+    re.IGNORECASE,
+)
+
+
+def is_copyright_line(line: str) -> bool:
+    """Check if the comment line contains the valid copyright token."""
+    return COPYRIGHT_TEXT in line or bool(COPYRIGHT_REGEX.search(line))
 
 
 def get_license_header(extension: str) -> str:
@@ -54,7 +66,7 @@ def get_license_header(extension: str) -> str:
 def has_license_header(content: str, extension: str | None = None) -> bool:
     """Check whether the source content has the required license header near the top.
 
-    Verifies that both required text tokens ('Copyright (c) 2026 tro Contributors' and
+    Verifies that both required text tokens ('Copyright (c) 2026 tro. Contributors' and
     'SPDX-License-Identifier: MIT') exist within a valid comment block near the beginning of the file,
     matching the comment syntax for the given file extension.
     """
@@ -98,7 +110,7 @@ def has_license_header(content: str, extension: str | None = None) -> bool:
     top_text = "\n".join(candidate_lines)
 
     if (
-        "Copyright (c) 2026 tro Contributors" not in top_text
+        (COPYRIGHT_TEXT not in top_text and not COPYRIGHT_REGEX.search(top_text))
         or "SPDX-License-Identifier: MIT" not in top_text
     ):
         return False
@@ -114,7 +126,7 @@ def has_license_header(content: str, extension: str | None = None) -> bool:
             if not stripped.startswith("#"):
                 # Hit code or non-# line before finding both header tokens
                 break
-            if "Copyright (c) 2026 tro Contributors" in stripped:
+            if is_copyright_line(stripped):
                 has_cp = True
             if "SPDX-License-Identifier: MIT" in stripped:
                 has_spdx = True
@@ -135,7 +147,7 @@ def has_license_header(content: str, extension: str | None = None) -> bool:
             if not in_block:
                 if stripped.startswith("/*"):
                     in_block = True
-                    if "Copyright (c) 2026 tro Contributors" in stripped:
+                    if is_copyright_line(stripped):
                         has_cp = True
                     if "SPDX-License-Identifier: MIT" in stripped:
                         has_spdx = True
@@ -146,7 +158,7 @@ def has_license_header(content: str, extension: str | None = None) -> bool:
                         if has_cp and has_spdx:
                             return True
                 elif stripped.startswith("//"):
-                    if "Copyright (c) 2026 tro Contributors" in stripped:
+                    if is_copyright_line(stripped):
                         has_cp = True
                     if "SPDX-License-Identifier: MIT" in stripped:
                         has_spdx = True
@@ -157,7 +169,7 @@ def has_license_header(content: str, extension: str | None = None) -> bool:
                     break
             else:
                 # Inside block comment
-                if "Copyright (c) 2026 tro Contributors" in stripped:
+                if is_copyright_line(stripped):
                     has_cp = True
                 if "SPDX-License-Identifier: MIT" in stripped:
                     has_spdx = True
@@ -167,8 +179,6 @@ def has_license_header(content: str, extension: str | None = None) -> bool:
                         break
                     if has_cp and has_spdx:
                         return True
-        if has_cp and has_spdx:
-            return True
 
         # Check contiguous // line comments
         has_cp = False
@@ -179,7 +189,7 @@ def has_license_header(content: str, extension: str | None = None) -> bool:
                 continue
             if not stripped.startswith("//"):
                 break
-            if "Copyright (c) 2026 tro Contributors" in stripped:
+            if is_copyright_line(stripped):
                 has_cp = True
             if "SPDX-License-Identifier: MIT" in stripped:
                 has_spdx = True

@@ -1,6 +1,6 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
-"""Core mathematical calculation engine for the tro rental utility billing system.
+"""Core mathematical calculation engine for the tro. rental utility billing system.
 
 This module is strictly independent of database and web layers, adhering to pure Python
 standard library principles for mathematical precision and testability.

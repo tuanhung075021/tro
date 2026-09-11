@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
 """Compatibility layer providing SQLModel interface with SQLite fallback.
 
@@ -9,6 +9,7 @@ If not, a lightweight Pydantic v2 + sqlite3 engine is provided with identical AP
 from datetime import datetime, timezone
 import json
 import os
+from pathlib import Path
 import sqlite3
 import sys
 import types
@@ -561,8 +562,27 @@ try:
             def __init__(self, app: Any = None, **kwargs: Any):
                 self.app = app
                 self.kwargs = kwargs
+    try:
+        from fastapi.responses import FileResponse, HTMLResponse
+    except ImportError:
+        try:
+            from starlette.responses import FileResponse, HTMLResponse  # type: ignore
+        except ImportError:
+            FileResponse = None  # type: ignore
+            HTMLResponse = None  # type: ignore
+    try:
+        from fastapi.staticfiles import StaticFiles
+    except ImportError:
+        try:
+            from starlette.staticfiles import StaticFiles  # type: ignore
+        except ImportError:
+            StaticFiles = None  # type: ignore
 except ImportError:
     FASTAPI_INSTALLED = False
+    Response = None  # type: ignore
+    FileResponse = None  # type: ignore
+    HTMLResponse = None  # type: ignore
+    StaticFiles = None  # type: ignore
 
 if FASTAPI_INSTALLED:
     class _ParamInfo:
@@ -571,7 +591,84 @@ if FASTAPI_INSTALLED:
         pass
     class _QueryInfo(_ParamInfo):
         pass
-else:
+
+if not FASTAPI_INSTALLED or Response is None:
+    class Response:  # type: ignore[no-redef]
+        """Base HTTP response."""
+        def __init__(
+            self,
+            content: Any = b"",
+            status_code: int = 200,
+            headers: Optional[Dict[str, str]] = None,
+            media_type: Optional[str] = None,
+        ):
+            self.content = content
+            self.status_code = status_code
+            self.headers = headers or {}
+            self.media_type = media_type
+
+        @property
+        def body(self) -> bytes:
+            if isinstance(self.content, bytes):
+                return self.content
+            if isinstance(self.content, str):
+                return self.content.encode("utf-8")
+            return str(self.content).encode("utf-8")
+
+if not FASTAPI_INSTALLED or HTMLResponse is None:
+    class HTMLResponse(Response):  # type: ignore[no-redef]
+        """HTML HTTP response."""
+        def __init__(
+            self,
+            content: Any = "",
+            status_code: int = 200,
+            headers: Optional[Dict[str, str]] = None,
+        ):
+            hdrs = dict(headers or {})
+            if not any(k.lower() == "content-type" for k in hdrs):
+                hdrs["content-type"] = "text/html; charset=utf-8"
+            super().__init__(content=content, status_code=status_code, headers=hdrs, media_type="text/html")
+
+if not FASTAPI_INSTALLED or FileResponse is None:
+    class FileResponse(Response):  # type: ignore[no-redef]
+        """File HTTP response."""
+        def __init__(
+            self,
+            path: Union[str, Path],
+            status_code: int = 200,
+            headers: Optional[Dict[str, str]] = None,
+            media_type: Optional[str] = None,
+        ):
+            self.path = Path(path)
+            if media_type is None:
+                import mimetypes
+                guessed, _ = mimetypes.guess_type(str(self.path))
+                media_type = guessed or "application/octet-stream"
+            hdrs = dict(headers or {})
+            if not any(k.lower() == "content-type" for k in hdrs):
+                hdrs["content-type"] = media_type
+            content = self.path.read_bytes() if self.path.is_file() else b""
+            super().__init__(content=content, status_code=status_code, headers=hdrs, media_type=media_type)
+
+if not FASTAPI_INSTALLED or StaticFiles is None:
+    class StaticFiles:  # type: ignore[no-redef]
+        """StaticFiles ASGI-compatible shim."""
+        def __init__(self, directory: Union[str, Path], html: bool = False, **kwargs: Any):
+            self.directory = Path(directory)
+            self.html = html
+            self.kwargs = kwargs
+
+        def get_response(self, path: str) -> Optional[Response]:
+            target = (self.directory / path.lstrip("/")).resolve()
+            try:
+                target.relative_to(self.directory.resolve())
+            except (ValueError, RuntimeError):
+                return None
+            if target.is_file():
+                return FileResponse(str(target))
+            return None
+
+if not FASTAPI_INSTALLED:
     class CORSMiddleware:
         """CORSMiddleware placeholder."""
         def __init__(self, app: Any = None, **kwargs: Any):
@@ -723,11 +820,16 @@ else:
 
     class FastAPI:
         """Lightweight FastAPI application registering routes."""
-        def __init__(self, title: str = "tro API", lifespan: Optional[Any] = None, **kwargs: Any):
+        def __init__(self, title: str = "tro. API", lifespan: Optional[Any] = None, **kwargs: Any):
             self.title = title
             self.lifespan = lifespan
             self.routes: List[Route] = []
             self.middleware: List[Any] = []
+            self.mounts: List[Tuple[str, Any, Optional[str]]] = []
+
+        def mount(self, path: str, app: Any, name: Optional[str] = None) -> None:
+            """Mount another ASGI application or StaticFiles under path prefix."""
+            self.mounts.append((path.rstrip("/"), app, name))
 
         def add_middleware(self, middleware_class: Any, **kwargs: Any) -> None:
             """Register middleware (no-op in test/compat mode)."""
@@ -797,7 +899,33 @@ class TestResponse:
     def text(self) -> str:
         if isinstance(self._data, str):
             return self._data
+        if isinstance(self._data, bytes):
+            return self._data.decode("utf-8", errors="replace")
+        if hasattr(self._data, "path") and Path(self._data.path).is_file():
+            return Path(self._data.path).read_text(encoding="utf-8", errors="replace")
+        if hasattr(self._data, "body"):
+            body = self._data.body
+            return body.decode("utf-8", errors="replace") if isinstance(body, bytes) else str(body)
+        if hasattr(self._data, "content"):
+            content = self._data.content
+            return content.decode("utf-8", errors="replace") if isinstance(content, bytes) else str(content)
         return json.dumps(self.json(), default=str)
+
+    @property
+    def content(self) -> bytes:
+        if isinstance(self._data, bytes):
+            return self._data
+        if isinstance(self._data, str):
+            return self._data.encode("utf-8")
+        if hasattr(self._data, "path") and Path(self._data.path).is_file():
+            return Path(self._data.path).read_bytes()
+        if hasattr(self._data, "body"):
+            body = self._data.body
+            return body if isinstance(body, bytes) else str(body).encode("utf-8")
+        if hasattr(self._data, "content"):
+            c = self._data.content
+            return c if isinstance(c, bytes) else str(c).encode("utf-8")
+        return self.text.encode("utf-8")
 
 def _match_path(pattern: str, url: str) -> Tuple[bool, Dict[str, Any]]:
     p = pattern.strip("/")
@@ -815,16 +943,31 @@ def _match_path(pattern: str, url: str) -> Tuple[bool, Dict[str, Any]]:
             p_parts = p_parts[3:]
         elif u_parts[:3] == ["api", "v1", "auth"] and u_parts[3:] == p_parts:
             u_parts = u_parts[3:]
-        else:
+
+    # Check for path converter in the last segment (e.g. {full_path:path})
+    if p_parts and p_parts[-1].startswith("{") and p_parts[-1].endswith("}") and ":path" in p_parts[-1]:
+        prefix_p = p_parts[:-1]
+        if len(u_parts) < len(prefix_p):
             return False, {}
+        params: Dict[str, Any] = {}
+        for p_seg, u_seg in zip(prefix_p, u_parts[:len(prefix_p)]):
+            if p_seg.startswith("{") and p_seg.endswith("}"):
+                param_name = p_seg[1:-1].split(":")[0]
+                params[param_name] = u_seg
+            elif p_seg != u_seg:
+                return False, {}
+        raw_param = p_parts[-1][1:-1]
+        param_name = raw_param.split(":")[0]
+        params[param_name] = "/".join(u_parts[len(prefix_p):])
+        return True, params
 
     if len(p_parts) != len(u_parts):
         return False, {}
 
-    params: Dict[str, Any] = {}
+    params = {}
     for p_seg, u_seg in zip(p_parts, u_parts):
         if p_seg.startswith("{") and p_seg.endswith("}"):
-            param_name = p_seg[1:-1]
+            param_name = p_seg[1:-1].split(":")[0]
             params[param_name] = u_seg
         elif p_seg != u_seg:
             return False, {}
@@ -1025,6 +1168,39 @@ class TestClient:
         session: Optional[Any] = None,
         **kwargs: Any,
     ) -> TestResponse:
+        # Check mounted apps (e.g. /assets)
+        mounts = list(getattr(self.app, "mounts", []))
+        if hasattr(self.app, "routes"):
+            for r in getattr(self.app, "routes", []):
+                if hasattr(r, "app") and hasattr(r, "path") and not hasattr(r, "endpoint"):
+                    mounts.append((getattr(r, "path", "").rstrip("/"), getattr(r, "app"), getattr(r, "name", None)))
+
+        clean_url = url.split("?")[0].rstrip("/") or "/"
+        for prefix, mounted_app, _ in mounts:
+            if clean_url == prefix or clean_url.startswith(prefix + "/"):
+                subpath = clean_url[len(prefix):].lstrip("/")
+                directory = getattr(mounted_app, "directory", None)
+                if directory is not None:
+                    target = (Path(directory) / subpath).resolve()
+                    try:
+                        target.relative_to(Path(directory).resolve())
+                    except (ValueError, RuntimeError):
+                        return TestResponse(404, {"detail": "Not Found"})
+                    if target.is_file():
+                        import mimetypes
+                        mime, _ = mimetypes.guess_type(str(target))
+                        hdrs = {"content-type": mime or "application/octet-stream"}
+                        return TestResponse(200, target.read_bytes(), headers=hdrs)
+                    return TestResponse(404, {"detail": "Not Found"})
+                elif hasattr(mounted_app, "get_response"):
+                    try:
+                        resp = mounted_app.get_response(subpath)
+                        if resp is not None:
+                            return TestResponse(getattr(resp, "status_code", 200), resp, headers=getattr(resp, "headers", {}))
+                    except TypeError:
+                        pass
+                return TestResponse(404, {"detail": "Not Found"})
+
         def _get_routes(r_list: Any) -> List[Any]:
             flat = []
             for r in r_list:
@@ -1069,8 +1245,9 @@ class TestClient:
                 session_override=session,
             )
             res = matched_route.endpoint(**call_kwargs)
-            status_code = matched_route.status_code or 200
-            return TestResponse(status_code, res)
+            status_code = getattr(res, "status_code", matched_route.status_code or 200)
+            res_headers = getattr(res, "headers", {})
+            return TestResponse(status_code, res, headers=res_headers)
         except HTTPException as exc:
             return TestResponse(exc.status_code, {"detail": exc.detail}, headers=exc.headers)
         except pydantic.ValidationError as exc:
@@ -1103,6 +1280,10 @@ if not FASTAPI_INSTALLED:
     fastapi_mod.Query = Query
     fastapi_mod.status = status
     fastapi_mod.CORSMiddleware = CORSMiddleware
+    fastapi_mod.Response = Response
+    fastapi_mod.HTMLResponse = HTMLResponse
+    fastapi_mod.FileResponse = FileResponse
+    fastapi_mod.StaticFiles = StaticFiles
     sys.modules["fastapi"] = fastapi_mod
 
     middleware_mod = types.ModuleType("fastapi.middleware")
@@ -1113,6 +1294,18 @@ if not FASTAPI_INSTALLED:
     sys.modules["fastapi.middleware.cors"] = cors_mod
     fastapi_mod.middleware = middleware_mod
 
+    responses_mod = types.ModuleType("fastapi.responses")
+    responses_mod.Response = Response
+    responses_mod.HTMLResponse = HTMLResponse
+    responses_mod.FileResponse = FileResponse
+    sys.modules["fastapi.responses"] = responses_mod
+    fastapi_mod.responses = responses_mod
+
+    staticfiles_mod = types.ModuleType("fastapi.staticfiles")
+    staticfiles_mod.StaticFiles = StaticFiles
+    sys.modules["fastapi.staticfiles"] = staticfiles_mod
+    fastapi_mod.staticfiles = staticfiles_mod
+
     security_mod = types.ModuleType("fastapi.security")
     security_mod.OAuth2PasswordBearer = OAuth2PasswordBearer
     security_mod.HTTPBearer = HTTPBearer
@@ -1122,3 +1315,26 @@ if not FASTAPI_INSTALLED:
 testclient_mod = types.ModuleType("fastapi.testclient")
 testclient_mod.TestClient = TestClient
 sys.modules["fastapi.testclient"] = testclient_mod
+
+__all__ = [
+    "APIRouter",
+    "CORSMiddleware",
+    "Depends",
+    "FastAPI",
+    "FileResponse",
+    "HTMLResponse",
+    "Header",
+    "HTTPException",
+    "Query",
+    "Request",
+    "Response",
+    "Session",
+    "StaticFiles",
+    "TestClient",
+    "create_engine",
+    "select",
+    "col",
+    "status",
+    "Field",
+    "SQLModel",
+]

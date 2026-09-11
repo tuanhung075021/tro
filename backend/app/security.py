@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
 """Cryptographic security utilities, password hashing, and JWT token operations."""
 

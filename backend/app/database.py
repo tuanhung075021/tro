@@ -1,6 +1,6 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
-"""Database engine, session management, and initialization for tro backend."""
+"""Database engine, session management, and initialization for tro. backend."""
 
 import os
 from typing import Any, Generator, Optional

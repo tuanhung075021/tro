@@ -1,6 +1,6 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
-"""Backend application package for tro."""
+"""Backend application package for tro. system."""
 
 from .api import router as api_router
 from .auth import (

@@ -178,6 +178,6 @@ Lịch sử thay đổi và phát hành các phiên bản được ghi nhận ch
 Dự án được phân phối dưới giấy phép **MIT License** (được tổ chức OSI công nhận). Xem toàn văn giấy phép tại file [LICENSE](LICENSE).
 
 ```text
-Copyright (c) 2026 tro Contributors
+Copyright (c) 2026 tro. Contributors
 SPDX-License-Identifier: MIT
 ```

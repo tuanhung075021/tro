@@ -1,10 +1,10 @@
 /*
- * Copyright (c) 2026 tro Contributors
+ * Copyright (c) 2026 tro. Contributors
  * SPDX-License-Identifier: MIT
  */
 
 /**
- * REST API client module configured for tro backend services.
+ * REST API client module configured for tro. backend services.
  * Base URL defaults to http://localhost:8000/api/v1, automatically attaches
  * JWT Authorization header and provides robust network error handling.
  */
@@ -41,7 +41,7 @@ export function removeToken() {
 }
 
 /**
- * Primary HTTP request wrapper for tro backend API.
+ * Primary HTTP request wrapper for tro. backend API.
  * Handles header injection, query serialization, response status parsing, and error formatting.
  */
 export async function request(endpoint, options = {}) {

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2026 tro Contributors
+ * Copyright (c) 2026 tro. Contributors
  * SPDX-License-Identifier: MIT
  */
 
@@ -94,7 +94,7 @@ function MainLayout() {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary-600 text-white shadow-xl shadow-primary-500/25 animate-pulse">
             <Zap className="w-7 h-7 fill-current" />
           </div>
-          <p className="text-sm font-bold text-slate-700">Đang khởi tạo hệ thống tro...</p>
+          <p className="text-sm font-bold text-slate-700">Đang khởi tạo hệ thống tro. ...</p>
         </div>
       </div>
     );

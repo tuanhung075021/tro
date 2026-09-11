@@ -1,6 +1,6 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
-"""Comprehensive end-to-end unit and integration tests for tro RESTful API ecosystem."""
+"""Comprehensive end-to-end unit and integration tests for tro. RESTful API ecosystem."""
 
 from decimal import Decimal
 import os
@@ -81,7 +81,7 @@ class TestTroApiEndpoints(unittest.TestCase):
     # ========================================================================
 
     def test_health_check_endpoint(self) -> None:
-        """GET /health must return status healthy and app tro."""
+        """GET /health must return status healthy and app tro.."""
         resp = self.client.get("/health")
         self.assertEqual(resp.status_code, 200)
         data = resp.json()

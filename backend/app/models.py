@@ -1,6 +1,6 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
-"""Database entities and dynamic pricing models for tro backend."""
+"""Database entities and dynamic pricing models for tro. backend."""
 
 from datetime import datetime, timezone
 import json

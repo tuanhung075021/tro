@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
 """Unit tests for SQLite database layer and dynamic pricing configuration."""
 

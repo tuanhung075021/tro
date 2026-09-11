@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
 """RESTful API router for properties, rooms, meter readings, invoices, and dynamic pricing."""
 

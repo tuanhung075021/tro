@@ -52,13 +52,13 @@ Dự án phát hành theo giấy phép **MIT**. Nhằm đảm bảo tính minh b
 
 - **Python / Shell**:
   ```python
-  # Copyright (c) 2026 tro Contributors
+  # Copyright (c) 2026 tro. Contributors
   # SPDX-License-Identifier: MIT
   ```
 - **JavaScript / TypeScript / CSS**:
   ```javascript
   /*
-   * Copyright (c) 2026 tro Contributors
+   * Copyright (c) 2026 tro. Contributors
    * SPDX-License-Identifier: MIT
    */
   ```

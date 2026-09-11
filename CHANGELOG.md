@@ -28,7 +28,7 @@ Tất cả những thay đổi đáng chú ý của dự án **tro.** sẽ đư�
   - Khởi tạo cây thư mục chức năng phân tầng: `core/` (engine tính toán), `tests/` (kiểm thử tự động), `backend/app/` (FastAPI backend), `frontend/` (React frontend), `scripts/` (công cụ quản trị).
   - Bổ sung file đánh dấu `.gitkeep` tại tất cả các thư mục rỗng để đảm bảo Git theo dõi đầy đủ.
 - **Giấy phép mã nguồn mở**:
-  - Ban hành toàn văn giấy phép **MIT License** chuẩn OSI-approved tại file `LICENSE` với thông tin bản quyền: `Copyright (c) 2026 tro Contributors`.
+  - Ban hành toàn văn giấy phép **MIT License** chuẩn OSI-approved tại file `LICENSE` với thông tin bản quyền: `Copyright (c) 2026 tro. Contributors`.
 - **Cấu hình loại trừ Git (`.gitignore`)**:
   - Thiết lập bộ quy tắc loại trừ hoàn chỉnh cho hệ sinh thái Python (`__pycache__/`, `*.py[cod]`, `.venv/`, `.pytest_cache/`), Node/Web (`node_modules/`, `dist/`, `.env.local`), cơ sở dữ liệu & nhật ký runtime (`*.db`, `*.sqlite3`, `*.log`), và cấu hình IDE / hệ điều hành (`.vscode/`, `.idea/`, `Thumbs.db`, `.DS_Store`).
 - **Công cụ quản lý & kiểm tra License Header (`scripts/add_license_headers.py`)**:

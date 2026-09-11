@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
 """Unit tests for authentication, JWT security, RBAC, and room invite code lifecycle."""
 

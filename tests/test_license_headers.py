@@ -1,4 +1,4 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
 """
 Comprehensive automated tests for FOSS setup and license header management tool.
@@ -30,7 +30,7 @@ class TestFossLicenseAndGitIgnore(unittest.TestCase):
     def test_license_content_mit(self):
         license_content = (REPO_ROOT / "LICENSE").read_text(encoding="utf-8")
         self.assertIn("MIT License", license_content)
-        self.assertIn("Copyright (c) 2026 tro Contributors", license_content)
+        self.assertIn("Copyright (c) 2026 tro. Contributors", license_content)
         self.assertIn("Permission is hereby granted, free of charge", license_content)
         self.assertIn("WITHOUT WARRANTY OF ANY KIND", license_content)
 
@@ -120,7 +120,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
     def test_get_license_header_formats(self):
         py_header = add_license_headers.get_license_header(".py")
-        self.assertIn("# Copyright (c) 2026 tro Contributors", py_header)
+        self.assertIn("# Copyright (c) 2026 tro. Contributors", py_header)
         self.assertIn("# SPDX-License-Identifier: MIT", py_header)
 
         sh_header = add_license_headers.get_license_header(".sh")
@@ -128,7 +128,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
         js_header = add_license_headers.get_license_header(".js")
         self.assertTrue(js_header.startswith("/*\n"))
-        self.assertIn(" * Copyright (c) 2026 tro Contributors", js_header)
+        self.assertIn(" * Copyright (c) 2026 tro. Contributors", js_header)
         self.assertIn(" * SPDX-License-Identifier: MIT", js_header)
         self.assertTrue(js_header.endswith("\n */"))
 
@@ -140,23 +140,23 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
     def test_has_license_header_detection(self):
         # Python format
-        py_code = "# Copyright (c) 2026 tro Contributors\n# SPDX-License-Identifier: MIT\n\nprint('hi')\n"
+        py_code = "# Copyright (c) 2026 tro. Contributors\n# SPDX-License-Identifier: MIT\n\nprint('hi')\n"
         self.assertTrue(add_license_headers.has_license_header(py_code))
 
         # JS block comment format
-        js_code = "/*\n * Copyright (c) 2026 tro Contributors\n * SPDX-License-Identifier: MIT\n */\nconsole.log(1);\n"
+        js_code = "/*\n * Copyright (c) 2026 tro. Contributors\n * SPDX-License-Identifier: MIT\n */\nconsole.log(1);\n"
         self.assertTrue(add_license_headers.has_license_header(js_code))
 
         # JS line comment format
-        js_line_code = "// Copyright (c) 2026 tro Contributors\n// SPDX-License-Identifier: MIT\nconsole.log(1);\n"
+        js_line_code = "// Copyright (c) 2026 tro. Contributors\n// SPDX-License-Identifier: MIT\nconsole.log(1);\n"
         self.assertTrue(add_license_headers.has_license_header(js_line_code))
 
         # With shebang
-        shebang_code = "#!/bin/bash\n# Copyright (c) 2026 tro Contributors\n# SPDX-License-Identifier: MIT\necho hi\n"
+        shebang_code = "#!/bin/bash\n# Copyright (c) 2026 tro. Contributors\n# SPDX-License-Identifier: MIT\necho hi\n"
         self.assertTrue(add_license_headers.has_license_header(shebang_code))
 
         # With shebang containing flags
-        shebang_flags_code = "#!/bin/bash -ex\n# Copyright (c) 2026 tro Contributors\n# SPDX-License-Identifier: MIT\necho hi\n"
+        shebang_flags_code = "#!/bin/bash -ex\n# Copyright (c) 2026 tro. Contributors\n# SPDX-License-Identifier: MIT\necho hi\n"
         self.assertTrue(add_license_headers.has_license_header(shebang_flags_code))
 
         # Missing header
@@ -165,7 +165,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         self.assertFalse(add_license_headers.has_license_header("   \n\n  "))
 
         # Partial header (only copyright, missing SPDX)
-        partial_1 = "# Copyright (c) 2026 tro Contributors\nprint('hi')\n"
+        partial_1 = "# Copyright (c) 2026 tro. Contributors\nprint('hi')\n"
         self.assertFalse(add_license_headers.has_license_header(partial_1))
 
         # Partial header (only SPDX, missing copyright)
@@ -177,7 +177,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         self.assertFalse(add_license_headers.has_license_header(deep_header))
 
         # Adversarial: String assignment containing header tokens must NOT be accepted as a comment header
-        code_string = 'msg = "Copyright (c) 2026 tro Contributors\\nSPDX-License-Identifier: MIT"\nprint(msg)\n'
+        code_string = 'msg = "Copyright (c) 2026 tro. Contributors\\nSPDX-License-Identifier: MIT"\nprint(msg)\n'
         self.assertFalse(
             add_license_headers.has_license_header(code_string),
             "Non-comment code strings must not be recognized as valid license headers",
@@ -185,7 +185,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
         # Adversarial: Language-specific comment syntax enforcement
         # C-style comment in Python file must NOT be accepted
-        py_c_style = "/*\n * Copyright (c) 2026 tro Contributors\n * SPDX-License-Identifier: MIT\n */\n"
+        py_c_style = "/*\n * Copyright (c) 2026 tro. Contributors\n * SPDX-License-Identifier: MIT\n */\n"
         self.assertFalse(
             add_license_headers.has_license_header(py_c_style, ".py"),
             "C-style comments in Python files must be rejected",
@@ -196,7 +196,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         )
 
         # Hash comment in JS / TS / CSS must NOT be accepted
-        js_hash_style = "# Copyright (c) 2026 tro Contributors\n# SPDX-License-Identifier: MIT\n"
+        js_hash_style = "# Copyright (c) 2026 tro. Contributors\n# SPDX-License-Identifier: MIT\n"
         for ext in [".js", ".jsx", ".ts", ".tsx", ".css"]:
             self.assertFalse(
                 add_license_headers.has_license_header(js_hash_style, ext),
@@ -204,7 +204,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
             )
 
         # Adversarial: JS block comment without leading asterisk on interior lines
-        js_plain_block = "/*\nCopyright (c) 2026 tro Contributors\nSPDX-License-Identifier: MIT\n*/\nconsole.log(1);\n"
+        js_plain_block = "/*\nCopyright (c) 2026 tro. Contributors\nSPDX-License-Identifier: MIT\n*/\nconsole.log(1);\n"
         self.assertTrue(
             add_license_headers.has_license_header(js_plain_block, ".js"),
             "JS block comments without leading '*' must be recognized as valid",
@@ -212,7 +212,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
         # Adversarial: Code statements interleaved between header tokens must NOT be accepted
         interleaved_code = (
-            "# Copyright (c) 2026 tro Contributors\n"
+            "# Copyright (c) 2026 tro. Contributors\n"
             "x = 100\n"
             "# SPDX-License-Identifier: MIT\n"
         )
@@ -224,13 +224,40 @@ class TestLicenseHeaderScript(unittest.TestCase):
         # Adversarial: Code preceding header must NOT be accepted
         code_before_header = (
             "print('init')\n"
-            "# Copyright (c) 2026 tro Contributors\n"
+            "# Copyright (c) 2026 tro. Contributors\n"
             "# SPDX-License-Identifier: MIT\n"
         )
         self.assertFalse(
             add_license_headers.has_license_header(code_before_header, ".py"),
             "Code placed before license header must be rejected",
         )
+
+        # Adversarial: Legacy header without trailing dot in brand name must be rejected
+        legacy_py = "# Copyright (c) 2026 tro Contributors\n# SPDX-License-Identifier: MIT\nprint(1)\n"
+        self.assertFalse(
+            add_license_headers.has_license_header(legacy_py, ".py"),
+            "Legacy brand without trailing dot ('tro Contributors') must be rejected",
+        )
+        legacy_js = "/*\n * Copyright (c) 2026 tro Contributors\n * SPDX-License-Identifier: MIT\n */\n"
+        self.assertFalse(
+            add_license_headers.has_license_header(legacy_js, ".js"),
+            "Legacy brand without trailing dot in JS comment must be rejected",
+        )
+
+        # Safe compatibility regex: variations of valid tro. Contributors headers
+        valid_variants = [
+            "# Copyright (c) 2025-2026 tro. Contributors\n# SPDX-License-Identifier: MIT\n",
+            "# Copyright (c) 2026–2027 tro. Contributors\n# SPDX-License-Identifier: MIT\n",
+            "# Copyright (c) 2025—2026 tro. Contributors\n# SPDX-License-Identifier: MIT\n",
+            "# Copyright © 2026 tro. Contributors\n# SPDX-License-Identifier: MIT\n",
+            "# Copyright 2026 tro. Contributors\n# SPDX-License-Identifier: MIT\n",
+            "# Copyright (c) tro. Contributors\n# SPDX-License-Identifier: MIT\n",
+        ]
+        for variant in valid_variants:
+            self.assertTrue(
+                add_license_headers.has_license_header(variant, ".py"),
+                f"Valid copyright variant must be accepted: {variant.strip()}",
+            )
 
     def test_add_header_to_python_file(self):
         original = "def solve():\n    return 42\n"
@@ -245,7 +272,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         original = "export function main() {\n  return 0;\n}\n"
         updated = add_license_headers.add_header_to_content(original, ".js")
         self.assertTrue(add_license_headers.has_license_header(updated))
-        self.assertTrue(updated.startswith("/*\n * Copyright (c) 2026 tro Contributors"))
+        self.assertTrue(updated.startswith("/*\n * Copyright (c) 2026 tro. Contributors"))
         # Idempotency
         self.assertEqual(updated, add_license_headers.add_header_to_content(updated, ".js"))
 
@@ -254,7 +281,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
             original = "/* content */\n"
             updated = add_license_headers.add_header_to_content(original, ext)
             self.assertTrue(add_license_headers.has_license_header(updated, ext))
-            self.assertTrue(updated.startswith("/*\n * Copyright (c) 2026 tro Contributors"))
+            self.assertTrue(updated.startswith("/*\n * Copyright (c) 2026 tro. Contributors"))
 
     def test_add_header_preserves_shebang(self):
         original = "#!/usr/bin/env bash\necho 'hello world'\n"
@@ -286,7 +313,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         original = 'transcoding_mode = "fast"\nx = 1\n'
         updated = add_license_headers.add_header_to_content(original, ".py")
         # Header must be at the very top, before transcoding_mode
-        self.assertTrue(updated.startswith("# Copyright (c) 2026 tro Contributors"))
+        self.assertTrue(updated.startswith("# Copyright (c) 2026 tro. Contributors"))
         self.assertIn('transcoding_mode = "fast"', updated)
         self.assertTrue(add_license_headers.has_license_header(updated, ".py"))
 
@@ -296,7 +323,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         raw = "\ufeffx = 1\n"
         self.assertFalse(add_license_headers.has_license_header(raw, ".py"))
         updated = add_license_headers.add_header_to_content(raw, ".py")
-        self.assertTrue(updated.startswith("\ufeff# Copyright (c) 2026 tro Contributors"))
+        self.assertTrue(updated.startswith("\ufeff# Copyright (c) 2026 tro. Contributors"))
         self.assertTrue(add_license_headers.has_license_header(updated, ".py"))
         # Idempotency with BOM
         self.assertEqual(updated, add_license_headers.add_header_to_content(updated, ".py"))
@@ -327,7 +354,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
         # File content must have preserved BOM and added header
         new_content = bom_file.read_bytes().decode("utf-8")
-        self.assertTrue(new_content.startswith("\ufeff# Copyright (c) 2026 tro Contributors"))
+        self.assertTrue(new_content.startswith("\ufeff# Copyright (c) 2026 tro. Contributors"))
 
     def test_non_utf8_surrogate_escape_handling(self):
         # File with legacy Windows-1252 byte (0xE9 = e acute)
@@ -345,7 +372,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
 
         updated_bytes = legacy_file.read_bytes()
         self.assertIn(b"\xe9", updated_bytes, "Legacy byte must be preserved losslessly")
-        self.assertIn(b"# Copyright (c) 2026 tro Contributors", updated_bytes)
+        self.assertIn(b"# Copyright (c) 2026 tro. Contributors", updated_bytes)
 
     def test_find_source_files_ignores_specified_dirs(self):
         ignored_names = [".git", "node_modules", ".venv", "dist", "__pycache__", "document"]
@@ -501,12 +528,46 @@ class TestLicenseHeaderScript(unittest.TestCase):
     def test_code_on_same_line_after_closing_comment_rejected(self):
         """Executable code on the same line after */ must cause rejection."""
         bad_code = (
-            "/* Copyright (c) 2026 tro Contributors */ console.log('bad');\n"
+            "/* Copyright (c) 2026 tro. Contributors */ console.log('bad');\n"
             "/* SPDX-License-Identifier: MIT */\n"
         )
         self.assertFalse(
             add_license_headers.has_license_header(bad_code, ".js"),
             "Code following comment closure on same line must be rejected",
+        )
+
+    def test_multiline_block_comment_with_code_on_closing_line_rejected(self):
+        """Executable code on the same line after multi-line */ must cause rejection."""
+        bad_code = (
+            "/*\n"
+            " * Copyright (c) 2026 tro. Contributors\n"
+            " * SPDX-License-Identifier: MIT\n"
+            " */ console.log('bad');\n"
+        )
+        self.assertFalse(
+            add_license_headers.has_license_header(bad_code, ".js"),
+            "Code following multi-line block comment closure on same line must be rejected",
+        )
+
+    def test_unclosed_block_comment_rejected(self):
+        """Unclosed block comment must not be accepted as a valid license header."""
+        unclosed_code = (
+            "/*\n"
+            " * Copyright (c) 2026 tro. Contributors\n"
+            " * SPDX-License-Identifier: MIT\n"
+            "console.log('code');\n"
+        )
+        self.assertFalse(
+            add_license_headers.has_license_header(unclosed_code, ".js"),
+            "Unclosed block comment must be rejected",
+        )
+
+    def test_single_line_both_tokens_with_trailing_code_rejected(self):
+        """Single-line block comment with both tokens followed by code must be rejected."""
+        bad_code = "/* Copyright (c) 2026 tro. Contributors - SPDX-License-Identifier: MIT */ console.log(1);\n"
+        self.assertFalse(
+            add_license_headers.has_license_header(bad_code, ".js"),
+            "Single-line block comment with trailing code must be rejected",
         )
 
     def test_extension_handling_without_leading_dot(self):
@@ -515,7 +576,7 @@ class TestLicenseHeaderScript(unittest.TestCase):
         self.assertIn("Copyright", py_h)
         js_h = add_license_headers.get_license_header("js")
         self.assertIn("Copyright", js_h)
-        py_code = "# Copyright (c) 2026 tro Contributors\n# SPDX-License-Identifier: MIT\nx = 1\n"
+        py_code = "# Copyright (c) 2026 tro. Contributors\n# SPDX-License-Identifier: MIT\nx = 1\n"
         self.assertTrue(add_license_headers.has_license_header(py_code, "py"))
         updated = add_license_headers.add_header_to_content("x = 1\n", "py")
         self.assertTrue(add_license_headers.has_license_header(updated, "py"))

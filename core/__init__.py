@@ -1,6 +1,6 @@
-# Copyright (c) 2026 tro Contributors
+# Copyright (c) 2026 tro. Contributors
 # SPDX-License-Identifier: MIT
-"""Core calculation engine package for the tro project."""
+"""Core calculation engine package for the tro. project."""
 
 from core.models import (
     DisputeResult,
