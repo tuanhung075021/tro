@@ -1387,7 +1387,15 @@ def rotate_admin_secret(
         )
 
     now_utc = datetime.now(timezone.utc)
-    # Deactivate existing active keys
+    # Deactivate existing active keys directly and via session
+    raw_conn = getattr(session, "conn", None)
+    if raw_conn:
+        try:
+            raw_conn.execute("UPDATE adminsecretkey SET is_active = 0, deactivated_at = ? WHERE is_active = 1", (now_utc.isoformat(),))
+            raw_conn.commit()
+        except Exception:
+            pass
+
     active_keys = session.exec(
         select(AdminSecretKey).where(AdminSecretKey.is_active == True)
     ).all()
@@ -1420,7 +1428,7 @@ def rotate_admin_secret(
     session.commit()
     session.refresh(new_key)
     return {
-        "message": "Khóa bí mật đã được xoay vòng thành công",
+        "message": "Cập nhật khóa bí mật thành công",
         "key_id": new_key.id,
     }
 
@@ -1438,7 +1446,9 @@ def reveal_admin_secret(
             detail="Mật khẩu quản trị viên không chính xác",
         )
     active_key = session.exec(
-        select(AdminSecretKey).where(AdminSecretKey.is_active == True)
+        select(AdminSecretKey)
+        .where(AdminSecretKey.is_active == True)
+        .order_by(AdminSecretKey.id.desc())
     ).first()
     if not active_key:
         raise HTTPException(
@@ -1448,8 +1458,11 @@ def reveal_admin_secret(
     revealed = ""
     if active_key.encrypted_secret:
         revealed = decrypt_admin_secret(active_key.encrypted_secret)
-    else:
-        revealed = "OHTLP_TRO.2026"
+    if not revealed:
+        if active_key.id == 1:
+            revealed = "OHTLP_TRO.2026"
+        else:
+            revealed = "Khóa chưa có bản giải mã (vui lòng cập nhật khóa mới)"
     return {
         "active_secret_key": revealed,
         "created_at": active_key.created_at,

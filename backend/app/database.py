@@ -138,7 +138,4 @@ def init_db(target_engine: Optional[Any] = None) -> None:
             )
             session.add(seed_key)
             session.commit()
-        elif getattr(active_key, "encrypted_secret", None) is None:
-            active_key.encrypted_secret = encrypt_admin_secret("OHTLP_TRO.2026")
-            session.add(active_key)
-            session.commit()
+

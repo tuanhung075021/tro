@@ -187,7 +187,9 @@ def register(
         submitted_key = submitted_key.strip()
 
         active_key = session.exec(
-            select(AdminSecretKey).where(AdminSecretKey.is_active == True)
+            select(AdminSecretKey)
+            .where(AdminSecretKey.is_active == True)
+            .order_by(AdminSecretKey.id.desc())
         ).first()
 
         key_valid = False
