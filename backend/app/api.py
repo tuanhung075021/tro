@@ -1005,48 +1005,86 @@ def get_notifications(
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> List[Dict[str, Any]]:
-    """Retrieve in-app notifications for the authenticated user."""
+    """Retrieve in-app notifications for the authenticated user.
+
+    - Tenant: sees only published invoices for their rooms, newest first, max 20.
+    - Landlord: sees all invoices (draft + published) for all their rooms, newest first, max 20.
+      Each notification includes room_number and property_name for clarity.
+    """
     notifs = []
+
     if current_user.is_tenant:
-        my_rooms = session.exec(select(Room).where(Room.tenant_id == current_user.id)).all()
-        for r in my_rooms:
+        my_rooms = session.exec(
+            select(Room).where(Room.tenant_id == current_user.id)
+        ).all()
+        room_map = {r.id: r for r in my_rooms if r.id is not None}
+        if room_map:
             invs = session.exec(
                 select(Invoice)
-                .where(Invoice.room_id == r.id, Invoice.status == "published")
+                .where(
+                    Invoice.room_id.in_(list(room_map.keys())),
+                    Invoice.status == "published",
+                )
                 .order_by(Invoice.created_at.desc())
             ).all()
-            for inv in invs[:5]:
+            for inv in invs[:20]:
+                r = room_map.get(inv.room_id)
+                room_label = f"Phòng {r.room_number}" if r else f"Phòng #{inv.room_id}"
                 notifs.append({
                     "id": f"inv_{inv.id}",
-                    "title": f"Hóa đơn điện nước tháng {inv.month_year}",
-                    "message": f"Phòng {r.room_number}: Tổng tiền {int(inv.total_statutory_amount):,} đ. Mã tra cứu: {inv.short_code or inv.id}",
-                    "timestamp": (inv.published_at or inv.created_at).isoformat() if (inv.published_at or inv.created_at) else None,
+                    "type": "invoice_published",
+                    "title": f"Hóa đơn tháng {inv.month_year} — {room_label}",
+                    "message": (
+                        f"{room_label}: Tổng tiền {int(inv.total_statutory_amount):,} đ. "
+                        f"Mã tra cứu: {inv.short_code or str(inv.id)}"
+                    ),
+                    "timestamp": (inv.published_at or inv.created_at).isoformat()
+                    if (inv.published_at or inv.created_at)
+                    else None,
                     "share_token": inv.share_token,
                     "short_code": inv.short_code,
                     "invoice_id": inv.id,
                     "read": False,
                 })
+
     elif current_user.is_landlord:
-        props = session.exec(select(Property).where(Property.landlord_id == current_user.id)).all()
-        prop_ids = [p.id for p in props if p.id is not None]
-        if prop_ids:
-            rooms = session.exec(select(Room).where(Room.property_id.in_(prop_ids))).all()
-            room_ids = [r.id for r in rooms if r.id is not None]
-            if room_ids:
+        props = session.exec(
+            select(Property).where(Property.landlord_id == current_user.id)
+        ).all()
+        prop_map = {p.id: p for p in props if p.id is not None}
+        if prop_map:
+            rooms = session.exec(
+                select(Room).where(Room.property_id.in_(list(prop_map.keys())))
+            ).all()
+            room_map = {r.id: r for r in rooms if r.id is not None}
+            if room_map:
                 invs = session.exec(
                     select(Invoice)
-                    .where(Invoice.room_id.in_(room_ids))
+                    .where(Invoice.room_id.in_(list(room_map.keys())))
                     .order_by(Invoice.created_at.desc())
                 ).all()
-                for inv in invs[:5]:
+                for inv in invs[:20]:
+                    r = room_map.get(inv.room_id)
+                    prop = prop_map.get(r.property_id) if r and r.property_id else None
+                    room_label = f"Phòng {r.room_number}" if r else f"Phòng #{inv.room_id}"
+                    prop_label = f" — {prop.name}" if prop else ""
+                    is_published = inv.status == "published"
+                    status_label = "Đã phát hành" if is_published else "Bản nháp"
                     notifs.append({
                         "id": f"inv_{inv.id}",
-                        "title": f"Hóa đơn tháng {inv.month_year} ({'Đã phát hành' if inv.status == 'published' else 'Bản nháp'})",
-                        "message": f"Hóa đơn {inv.short_code or inv.id}: {int(inv.total_statutory_amount):,} đ ({inv.status})",
-                        "timestamp": (inv.published_at or inv.created_at).isoformat() if (inv.published_at or inv.created_at) else None,
+                        "type": "invoice_published" if is_published else "invoice_draft",
+                        "title": f"Hóa đơn {inv.month_year} [{status_label}]{prop_label}",
+                        "message": (
+                            f"{room_label}: {int(inv.total_statutory_amount):,} đ — "
+                            f"Mã: {inv.short_code or str(inv.id)}"
+                        ),
+                        "timestamp": (inv.published_at or inv.created_at).isoformat()
+                        if (inv.published_at or inv.created_at)
+                        else None,
                         "share_token": inv.share_token,
                         "short_code": inv.short_code,
                         "invoice_id": inv.id,
                         "read": False,
                     })
+
     return notifs

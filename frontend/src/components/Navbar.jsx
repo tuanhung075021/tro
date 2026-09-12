@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { notifications as notifApi } from '../services/api';
 import {
@@ -17,6 +17,8 @@ import {
   Bell,
   CheckCheck,
   ExternalLink,
+  FileCheck2,
+  FileClock,
 } from 'lucide-react';
 
 export default function Navbar({
@@ -31,32 +33,39 @@ export default function Navbar({
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const dropdownRef = useRef(null);
+  // Persist read IDs across re-fetches using a Set in a ref
+  const readIdsRef = useRef(new Set());
 
-  // Fetch notifications periodically or on mount when authenticated
+  const fetchNotifs = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const data = await notifApi.get();
+      const list = (data || []).map((n) => ({
+        ...n,
+        read: readIdsRef.current.has(n.id) ? true : n.read,
+      }));
+      setNotifications(list);
+      setUnreadCount(list.filter((n) => !n.read).length);
+    } catch {
+      // Fail silently on network error / unauthenticated
+    }
+  }, [isAuthenticated]);
+
+  // Fetch notifications on mount and every 30s
   useEffect(() => {
     if (!isAuthenticated) {
       setNotifications([]);
       setUnreadCount(0);
+      readIdsRef.current.clear();
       return;
     }
 
-    const fetchNotifs = async () => {
-      try {
-        const data = await notifApi.get();
-        const list = data || [];
-        setNotifications(list);
-        setUnreadCount(list.filter((n) => !n.read).length);
-      } catch {
-        // Fallback silently if unauthenticated or network error
-      }
-    };
-
     fetchNotifs();
-    const timer = setInterval(fetchNotifs, 15000); // 15s poll
+    const timer = setInterval(fetchNotifs, 30000); // 30s poll (reduced from 15s)
     return () => clearInterval(timer);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchNotifs]);
 
-  // Click outside to close notification dropdown
+  // Click outside to close dropdown
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -68,8 +77,61 @@ export default function Navbar({
   }, []);
 
   const handleMarkAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    setNotifications((prev) => {
+      const updated = prev.map((n) => {
+        readIdsRef.current.add(n.id);
+        return { ...n, read: true };
+      });
+      return updated;
+    });
     setUnreadCount(0);
+  };
+
+  const handleNotifClick = (n) => {
+    // Mark this one as read
+    readIdsRef.current.add(n.id);
+    setNotifications((prev) =>
+      prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
+    );
+    setUnreadCount((c) => Math.max(0, c - (n.read ? 0 : 1)));
+    setShowNotifDropdown(false);
+    if (n.share_token) {
+      onSelectInvoice?.(n.share_token);
+    }
+  };
+
+  const formatTimestamp = (ts) => {
+    if (!ts) return null;
+    try {
+      const d = new Date(ts);
+      const now = new Date();
+      const diffMs = now - d;
+      const diffMins = Math.floor(diffMs / 60000);
+      if (diffMins < 1) return 'Vừa xong';
+      if (diffMins < 60) return `${diffMins} phút trước`;
+      const diffHrs = Math.floor(diffMins / 60);
+      if (diffHrs < 24) return `${diffHrs} giờ trước`;
+      const diffDays = Math.floor(diffHrs / 24);
+      if (diffDays < 7) return `${diffDays} ngày trước`;
+      return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch {
+      return null;
+    }
+  };
+
+  const getNotifStyle = (type, isRead) => {
+    const base = isRead ? 'bg-white' : '';
+    if (type === 'invoice_draft') return `${isRead ? 'bg-white' : 'bg-amber-50/60'}`;
+    if (type === 'invoice_published') return `${isRead ? 'bg-white' : 'bg-emerald-50/60'}`;
+    return base;
+  };
+
+  const getNotifIcon = (type) => {
+    if (type === 'invoice_draft')
+      return <FileClock className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />;
+    if (type === 'invoice_published')
+      return <FileCheck2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />;
+    return <FileText className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />;
   };
 
   return (
@@ -178,27 +240,31 @@ export default function Navbar({
                           notifications.map((n) => (
                             <div
                               key={n.id}
-                              onClick={() => {
-                                setShowNotifDropdown(false);
-                                if (n.share_token) {
-                                  onSelectInvoice?.(n.share_token);
-                                }
-                              }}
-                              className={`p-3.5 hover:bg-slate-50 cursor-pointer transition-colors space-y-1 ${
-                                !n.read ? 'bg-primary-50/40' : ''
-                              }`}
+                              onClick={() => handleNotifClick(n)}
+                              className={`p-3.5 hover:bg-slate-50 cursor-pointer transition-colors ${getNotifStyle(n.type, n.read)}`}
                             >
-                              <div className="flex items-center justify-between gap-2">
-                                <h4 className="text-xs font-bold text-slate-900 leading-tight">
-                                  {n.title}
-                                </h4>
-                                {n.short_code && (
-                                  <span className="px-1.5 py-0.5 bg-slate-100 font-mono text-[10px] font-bold text-slate-700 rounded border border-slate-200">
-                                    {n.short_code}
-                                  </span>
+                              <div className="flex items-start gap-2.5">
+                                {getNotifIcon(n.type)}
+                                <div className="flex-1 min-w-0 space-y-0.5">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <h4 className={`text-xs font-bold leading-tight ${n.read ? 'text-slate-600' : 'text-slate-900'}`}>
+                                      {n.title}
+                                    </h4>
+                                    {n.short_code && (
+                                      <span className="flex-shrink-0 px-1.5 py-0.5 bg-slate-100 font-mono text-[10px] font-bold text-slate-600 rounded border border-slate-200">
+                                        {n.short_code}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-500 leading-snug">{n.message}</p>
+                                  {n.timestamp && (
+                                    <p className="text-[10px] text-slate-400">{formatTimestamp(n.timestamp)}</p>
+                                  )}
+                                </div>
+                                {!n.read && (
+                                  <span className="w-2 h-2 bg-primary-500 rounded-full flex-shrink-0 mt-1" />
                                 )}
                               </div>
-                              <p className="text-xs text-slate-600">{n.message}</p>
                             </div>
                           ))
                         )}
