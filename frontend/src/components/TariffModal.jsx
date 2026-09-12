@@ -1,0 +1,155 @@
+/*
+ * Copyright (c) 2026 tro. Contributors
+ * SPDX-License-Identifier: MIT
+ */
+
+import React, { useEffect } from 'react';
+import { X, Scale, ShieldCheck, Zap, Droplets, BookOpen, AlertCircle } from 'lucide-react';
+
+export default function TariffModal({ isOpen, onClose }) {
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const tiers = [
+    { tier: 1, range: '0 - 50 kWh', price: '1.984 đ', priceVat: '2.143 đ' },
+    { tier: 2, range: '51 - 100 kWh', price: '2.050 đ', priceVat: '2.214 đ' },
+    { tier: 3, range: '101 - 200 kWh', price: '2.380 đ', priceVat: '2.570 đ', note: 'Mức áp dụng cố định khi không kê khai định mức (TT 60/2025)' },
+    { tier: 4, range: '201 - 300 kWh', price: '2.998 đ', priceVat: '3.238 đ' },
+    { tier: 5, range: '301 - 400 kWh', price: '3.350 đ', priceVat: '3.618 đ' },
+    { tier: 6, range: 'Từ 401 kWh trở lên', price: '3.460 đ', priceVat: '3.737 đ' },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
+        {/* Header */}
+        <div className="sticky top-0 bg-white/95 backdrop-blur px-6 py-4 border-b border-slate-100 flex items-center justify-between z-10">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center">
+              <Scale className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base sm:text-lg font-black text-slate-900">Biểu giá quy định nhà nước</h2>
+              <p className="text-xs text-slate-500">Căn cứ pháp lý tính tiền điện và nước sinh hoạt</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+            title="Đóng (Esc)"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-6 text-xs sm:text-sm">
+          {/* Căn cứ pháp lý tóm lược */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                <BookOpen className="w-3.5 h-3.5 text-primary-600" />
+                <span>QĐ 1279 & TT 60/2025/TT-BCT</span>
+              </div>
+              <p className="text-slate-500 text-[11px] leading-relaxed">
+                Quy định giá bán lẻ điện sinh hoạt 6 bậc thang và cơ chế tính định mức 4 người / hộ cho sinh viên, người thuê trọ.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1">
+              <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                <span>NQ 204 & NĐ 104/2022/NĐ-CP</span>
+              </div>
+              <p className="text-slate-500 text-[11px] leading-relaxed">
+                Thuế GTGT điện là 8%. Nghiêm cấm hành vi thu tiền điện của người thuê trọ cao hơn biểu giá quy định của nhà nước.
+              </p>
+            </div>
+          </div>
+
+          {/* Biểu giá điện 6 bậc thang */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="font-black text-slate-900 flex items-center gap-1.5 text-sm">
+                <Zap className="w-4 h-4 text-amber-500" />
+                <span>Giá bán lẻ điện sinh hoạt (VAT 8%)</span>
+              </h3>
+              <span className="text-[11px] text-slate-400">Đơn vị: VNĐ / kWh</span>
+            </div>
+
+            <div className="overflow-hidden rounded-2xl border border-slate-200">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="py-2.5 px-3">Bậc</th>
+                    <th className="py-2.5 px-3">Khoảng tiêu thụ</th>
+                    <th className="py-2.5 px-3 text-right">Giá gốc</th>
+                    <th className="py-2.5 px-3 text-right text-primary-700">Giá có VAT (8%)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {tiers.map((t) => (
+                    <tr key={t.tier} className={t.tier === 3 ? 'bg-amber-50/40' : 'hover:bg-slate-50/50'}>
+                      <td className="py-2 px-3 font-bold text-slate-800">Bậc {t.tier}</td>
+                      <td className="py-2 px-3 text-slate-600">{t.range}</td>
+                      <td className="py-2 px-3 text-right font-mono text-slate-700">{t.price}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-primary-700">{t.priceVat}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/80 text-[11px] text-amber-900 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+              <span>
+                <strong>Trường hợp không đăng ký định mức:</strong> Áp dụng giá điện Bậc 3 (2.380 đ/kWh, có VAT: 2.570 đ/kWh) cho toàn bộ sản lượng đo được tại công tơ phòng trọ theo Khoản 4 Điều 10 Thông tư 60/2025/TT-BCT.
+              </span>
+            </div>
+          </div>
+
+          {/* Biểu giá nước sinh hoạt */}
+          <div className="space-y-3">
+            <h3 className="font-black text-slate-900 flex items-center gap-1.5 text-sm">
+              <Droplets className="w-4 h-4 text-blue-500" />
+              <span>Biểu giá nước sinh hoạt</span>
+            </h3>
+
+            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div>
+                <span className="text-slate-400 block text-[11px]">Đơn giá nước theo khối</span>
+                <span className="text-base font-black text-slate-900">8.500 đ / m³</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Thuế GTGT nước sạch</span>
+                <span className="text-base font-black text-slate-900">5%</span>
+              </div>
+              <div>
+                <span className="text-slate-400 block text-[11px]">Phí bảo vệ môi trường</span>
+                <span className="text-base font-black text-slate-900">10%</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs rounded-xl transition-all"
+          >
+            Đã hiểu & Đóng
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -5,17 +5,22 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import Navbar from './components/Navbar';
-import AuthForm from './components/AuthForm';
+import LandingPage from './components/LandingPage';
+import AuthModal from './components/AuthModal';
 import LandlordDashboard from './components/LandlordDashboard';
 import TenantDashboard from './components/TenantDashboard';
 import PublicInvoiceView from './components/PublicInvoiceView';
-import { Zap, ShieldCheck, FileText, Scale, Heart } from 'lucide-react';
+import TariffModal from './components/TariffModal';
+import { Zap } from 'lucide-react';
 
 function MainLayout() {
   const { user, isAuthenticated, isLandlord, isTenant, loading } = useAuth();
-  const [currentView, setCurrentView] = useState('home'); // 'home' | 'auth' | 'public'
+  const [currentView, setCurrentView] = useState('home'); // 'home' | 'public'
   const [publicToken, setPublicToken] = useState('');
+  const [showTariffModal, setShowTariffModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   // Extract public token from URL (path /public/:token, hash #public/:token, or search ?public=token)
   const parseUrlRoute = useCallback(() => {
@@ -103,32 +108,26 @@ function MainLayout() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
       <div>
-        <Navbar currentView={currentView} setCurrentView={setCurrentView} />
+        <Navbar
+          currentView={currentView}
+          setCurrentView={setCurrentView}
+          onOpenTariffModal={() => setShowTariffModal(true)}
+          onOpenAuthModal={() => setShowAuthModal(true)}
+          onSelectInvoice={handleViewPublicInvoice}
+        />
 
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {/* VIEW ROUTER */}
           {currentView === 'public' ? (
             <PublicInvoiceView initialToken={publicToken} onBackToHome={handleBackToHome} />
           ) : !isAuthenticated ? (
-            <div className="py-6 sm:py-12 space-y-12">
-              {/* Hero Banner for Unauthenticated Users */}
-              <div className="text-center max-w-3xl mx-auto space-y-4">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-100 text-primary-800 text-xs font-bold border border-primary-200">
-                  <ShieldCheck className="w-4 h-4 text-primary-600" />
-                  <span>Tuân thủ Nghị quyết 204/2025/QH15 & Nghị định 104/2022/NĐ-CP</span>
-                </div>
-                <h1 className="text-3xl sm:text-5xl font-black text-slate-900 tracking-tight leading-tight">
-                  Minh bạch chi phí điện nước <br className="hidden sm:inline" />
-                  <span className="text-primary-600">bảo vệ chủ trọ và người thuê</span>
-                </h1>
-                <p className="text-slate-600 text-sm sm:text-base leading-relaxed">
-                  Hệ thống tự động tính giá bán lẻ điện sinh hoạt 6 bậc thang, đối chiếu tiền thực thu với quy định pháp luật và cung cấp cổng tra cứu công khai tức thì.
-                </p>
-              </div>
-
-              {/* Login / Register Card */}
-              <AuthForm onAuthSuccess={() => setCurrentView('home')} />
-            </div>
+            <LandingPage
+              onOpenAuth={() => setShowAuthModal(true)}
+              onOpenPublic={() => {
+                setCurrentView('public');
+                window.history.pushState(null, '', '/public');
+              }}
+            />
           ) : isLandlord ? (
             <LandlordDashboard onViewPublicInvoice={handleViewPublicInvoice} />
           ) : isTenant ? (
@@ -142,26 +141,37 @@ function MainLayout() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-16 bg-white border-t border-slate-200 py-8 text-xs text-slate-500">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-4">
+      <footer className="mt-16 bg-white border-t border-slate-200 py-6 text-xs text-slate-500 no-print">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="text-base font-black text-slate-900">
               tro<span className="text-primary-600">.</span>
             </span>
-            <span>— Hệ thống tính toán và đối chiếu chi phí điện nước nhà trọ minh bạch.</span>
+            <span> Hệ thống Quản lý Lưu trú & Đối chiếu Chi phí Điện Nước Minh bạch</span>
           </div>
 
-          <div className="flex flex-wrap items-center justify-center gap-4 text-[11px] text-slate-400">
-            <span>Giấy phép mã nguồn mở MIT</span>
+          <div className="flex items-center gap-4 text-[11px] text-slate-400">
+            <span>Giấy phép MIT</span>
             <span>•</span>
-            <span>Thông tư 60/2025/TT-BCT</span>
-            <span>•</span>
-            <span>Quyết định 1279/QĐ-BCT</span>
-            <span>•</span>
-            <span>Nghị định 104/2022/NĐ-CP</span>
+            <span>© 2026 tro. Contributors</span>
           </div>
         </div>
       </footer>
+
+      {/* Consolidated Modals */}
+      <TariffModal
+        isOpen={showTariffModal}
+        onClose={() => setShowTariffModal(false)}
+      />
+
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onAuthSuccess={() => {
+          setShowAuthModal(false);
+          setCurrentView('home');
+        }}
+      />
     </div>
   );
 }
@@ -169,7 +179,9 @@ function MainLayout() {
 export default function App() {
   return (
     <AuthProvider>
-      <MainLayout />
+      <ToastProvider>
+        <MainLayout />
+      </ToastProvider>
     </AuthProvider>
   );
 }

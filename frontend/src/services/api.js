@@ -9,7 +9,13 @@
  * JWT Authorization header and provides robust network error handling.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL ||
+  (typeof window !== 'undefined' && window.location && window.location.origin
+    ? (window.location.port === '5173'
+        ? 'http://localhost:8000/api/v1'
+        : `${window.location.origin}/api/v1`)
+    : 'http://localhost:8000/api/v1');
 
 /**
  * Retrieve the current JWT authentication token from localStorage.
@@ -98,10 +104,11 @@ export async function request(endpoint, options = {}) {
       (msg.includes('fetch') ||
         msg.includes('load') ||
         msg.includes('network') ||
-        msg.includes('failed'))
+        msg.includes('failed to fetch'))
     ) {
+      const hostHint = API_BASE_URL.replace('/api/v1', '');
       const networkError = new Error(
-        'Không thể kết nối đến máy chủ backend (http://localhost:8000). Vui lòng kiểm tra lại dịch vụ.'
+        `Không thể kết nối đến dịch vụ backend (${hostHint}). Vui lòng kiểm tra lại dịch vụ.`
       );
       networkError.status = 0;
       throw networkError;
@@ -157,6 +164,12 @@ export const properties = {
       body: JSON.stringify(data),
     }),
 
+  update: (id, data) =>
+    request(`/properties/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
   getRooms: (propertyId) =>
     request(`/properties/${propertyId}/rooms`, {
       method: 'GET',
@@ -166,6 +179,17 @@ export const properties = {
     request(`/properties/${propertyId}/rooms`, {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+
+  assignTenant: (propertyId, roomId, data) =>
+    request(`/properties/${propertyId}/rooms/${roomId}/assign-tenant`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  removeTenant: (propertyId, roomId) =>
+    request(`/properties/${propertyId}/rooms/${roomId}/remove-tenant`, {
+      method: 'POST',
     }),
 };
 
@@ -177,6 +201,38 @@ export const rooms = {
     request(`/rooms/${id}`, {
       method: 'GET',
     }),
+
+  getMyRooms: () =>
+    request('/tenant/rooms', {
+      method: 'GET',
+    }),
+
+  join: (data) =>
+    request('/rooms/join', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  assignTenant: (propertyId, roomId, data) =>
+    request(
+      propertyId
+        ? `/properties/${propertyId}/rooms/${roomId}/assign-tenant`
+        : `/rooms/${roomId}/assign-tenant`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    ),
+
+  removeTenant: (roomId, propertyId) =>
+    request(
+      propertyId
+        ? `/properties/${propertyId}/rooms/${roomId}/remove-tenant`
+        : `/rooms/${roomId}/remove-tenant`,
+      {
+        method: 'POST',
+      }
+    ),
 
   getReadings: (roomId) =>
     request(`/rooms/${roomId}/readings`, {
@@ -202,6 +258,22 @@ export const rooms = {
 };
 
 // ----------------------------------------------------------------------------
+// Tenant Automated API (Cổng Người Thuê)
+// ----------------------------------------------------------------------------
+export const tenant = {
+  getRooms: () =>
+    request('/tenant/rooms', {
+      method: 'GET',
+    }),
+
+  joinRoom: (inviteCode) =>
+    request('/rooms/join', {
+      method: 'POST',
+      body: JSON.stringify({ invite_code: inviteCode }),
+    }),
+};
+
+// ----------------------------------------------------------------------------
 // Invoices API (Hóa đơn & Tra cứu công khai Tính năng 17)
 // ----------------------------------------------------------------------------
 export const invoices = {
@@ -210,8 +282,23 @@ export const invoices = {
       method: 'GET',
     }),
 
+  publish: (id) =>
+    request(`/invoices/${id}/publish`, {
+      method: 'POST',
+    }),
+
   getPublic: (shareToken) =>
     request(`/invoices/public/${encodeURIComponent(shareToken)}`, {
+      method: 'GET',
+    }),
+};
+
+// ----------------------------------------------------------------------------
+// Notifications API
+// ----------------------------------------------------------------------------
+export const notifications = {
+  get: () =>
+    request('/notifications', {
       method: 'GET',
     }),
 };
@@ -240,6 +327,8 @@ export default {
   auth,
   properties,
   rooms,
+  tenant,
   invoices,
+  notifications,
   systemConfig,
 };

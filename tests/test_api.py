@@ -1268,6 +1268,353 @@ class TestTroApiEndpoints(unittest.TestCase):
             )
             self.assertIn(neg_price.status_code, [400, 422])
 
+    # ========================================================================
+    # 8. Tenant Assignment, Automated Rooms & Room Joining (R1 & R2)
+    # ========================================================================
+
+    def test_assign_tenant_via_username_and_phone(self) -> None:
+        """Landlord assigns tenant directly via username or phone; handles validation and RBAC."""
+        with Session(self.engine) as session:
+            landlord, l_token = self._create_user(session, "host_assigner", role="landlord")
+            other_landlord, other_l_token = self._create_user(session, "other_host_assigner", role="landlord")
+            tenant1, t1_token = self._create_user(session, "tenant_one", role="tenant")
+            tenant2, t2_token = self._create_user(session, "tenant_two", role="tenant")
+
+            # Set distinct phone for tenant2
+            t2_user = session.get(User, tenant2.id)
+            t2_user.phone = "0987654321"
+            session.add(t2_user)
+            session.commit()
+
+            # Create property and room
+            p_res = self.client.post(
+                "/api/v1/properties",
+                json={"name": "Khu Tro Assign", "address": "123 Le Loi"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            prop_id = p_res.json()["id"]
+
+            r_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms",
+                json={"room_number": "301", "current_people_count": 2},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            room_id = r_res.json()["id"]
+
+            # 1. Assign tenant via username
+            assign_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": "tenant_one"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(assign_res.status_code, 200)
+            data = assign_res.json()
+            self.assertEqual(data["status"], "active")
+            self.assertEqual(data["tenant_id"], tenant1.id)
+            self.assertEqual(data["tenant_name"], tenant1.full_name)
+            self.assertEqual(data["tenant_phone"], tenant1.phone)
+            self.assertEqual(data["property_name"], "Khu Tro Assign")
+
+            # 2. Re-assign tenant via phone number (using alternate route)
+            assign_phone_res = self.client.post(
+                f"/api/v1/rooms/{room_id}/assign-tenant",
+                json={"phone": "0987654321"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(assign_phone_res.status_code, 200)
+            phone_data = assign_phone_res.json()
+            self.assertEqual(phone_data["tenant_id"], tenant2.id)
+            self.assertEqual(phone_data["tenant_phone"], "0987654321")
+
+            # 3. Missing username and phone -> HTTP 400
+            empty_assign = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(empty_assign.status_code, 400)
+
+            # 4. Non-existent tenant -> HTTP 404
+            missing_tenant = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": "ghost_user_999"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(missing_tenant.status_code, 404)
+
+            # 5. User found but has landlord role -> HTTP 400
+            landlord_as_tenant = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": other_landlord.username},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(landlord_as_tenant.status_code, 400)
+
+            # 6. Other landlord cannot assign to this property -> HTTP 403
+            other_l_assign = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": "tenant_one"},
+                headers=self._auth_headers(other_l_token),
+                session=session,
+            )
+            self.assertEqual(other_l_assign.status_code, 403)
+
+            # 7. Tenant forbidden from calling assign-tenant -> HTTP 403
+            tenant_assign = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": "tenant_one"},
+                headers=self._auth_headers(t1_token),
+                session=session,
+            )
+            self.assertEqual(tenant_assign.status_code, 403)
+
+            # 8. Mismatched property_id -> HTTP 400
+            mismatch_res = self.client.post(
+                f"/api/v1/properties/999999/rooms/{room_id}/assign-tenant",
+                json={"username": "tenant_one"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertIn(mismatch_res.status_code, [400, 404])
+
+            # 9. Assign via @username prefix
+            at_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": "@tenant_one"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(at_res.status_code, 200)
+            self.assertEqual(at_res.json()["tenant_id"], tenant1.id)
+
+            # 10. Assign via phone passed in username field (cross-field fallback)
+            fallback_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": "0987654321"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(fallback_res.status_code, 200)
+            self.assertEqual(fallback_res.json()["tenant_id"], tenant2.id)
+
+    def test_tenant_rooms_listing_and_isolation(self) -> None:
+        """GET /api/v1/tenant/rooms and /api/v1/rooms/my return assigned rooms with rich property metadata."""
+        with Session(self.engine) as session:
+            landlord, l_token = self._create_user(session, "host_auto_room", role="landlord")
+            tenant_a, ta_token = self._create_user(session, "tenant_alice", role="tenant")
+            tenant_b, tb_token = self._create_user(session, "tenant_bob", role="tenant")
+
+            # Create property and 2 rooms
+            p_res = self.client.post(
+                "/api/v1/properties",
+                json={"name": "Chung Cu Mini An Binh", "address": "456 Tran Hung Dao"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            prop_id = p_res.json()["id"]
+
+            r1_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms",
+                json={"room_number": "A101", "current_people_count": 3},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            r1_id = r1_res.json()["id"]
+
+            r2_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms",
+                json={"room_number": "A102", "current_people_count": 1},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            r2_id = r2_res.json()["id"]
+
+            # Before assignment: tenant A has 0 rooms
+            empty_rooms = self.client.get(
+                "/api/v1/tenant/rooms",
+                headers=self._auth_headers(ta_token),
+                session=session,
+            )
+            self.assertEqual(empty_rooms.status_code, 200)
+            self.assertEqual(empty_rooms.json(), [])
+
+            # Assign tenant A to room A101
+            self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{r1_id}/assign-tenant",
+                json={"username": "tenant_alice"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+
+            # Assign tenant B to room A102
+            self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{r2_id}/assign-tenant",
+                json={"username": "tenant_bob"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+
+            # Tenant A calls /tenant/rooms
+            ta_rooms = self.client.get(
+                "/api/v1/tenant/rooms",
+                headers=self._auth_headers(ta_token),
+                session=session,
+            )
+            self.assertEqual(ta_rooms.status_code, 200)
+            ta_data = ta_rooms.json()
+            self.assertEqual(len(ta_data), 1)
+            self.assertEqual(ta_data[0]["room_number"], "A101")
+            self.assertEqual(ta_data[0]["property_name"], "Chung Cu Mini An Binh")
+            self.assertEqual(ta_data[0]["property_address"], "456 Tran Hung Dao")
+            self.assertEqual(ta_data[0]["current_people_count"], 3)
+            self.assertEqual(ta_data[0]["landlord_name"], landlord.full_name)
+
+            # Tenant A calls alias /rooms/my
+            ta_my = self.client.get(
+                "/api/v1/rooms/my",
+                headers=self._auth_headers(ta_token),
+                session=session,
+            )
+            self.assertEqual(ta_my.status_code, 200)
+            self.assertEqual(len(ta_my.json()), 1)
+            self.assertEqual(ta_my.json()[0]["id"], r1_id)
+
+            # Tenant B only sees room A102 (isolation)
+            tb_rooms = self.client.get(
+                "/api/v1/tenant/rooms",
+                headers=self._auth_headers(tb_token),
+                session=session,
+            )
+            self.assertEqual(tb_rooms.status_code, 200)
+            tb_data = tb_rooms.json()
+            self.assertEqual(len(tb_data), 1)
+            self.assertEqual(tb_data[0]["room_number"], "A102")
+
+    def test_tenant_join_room_via_invite_code(self) -> None:
+        """POST /api/v1/rooms/join links tenant to room via valid invite code; enforces occupancy rules."""
+        with Session(self.engine) as session:
+            landlord, l_token = self._create_user(session, "host_join_test", role="landlord")
+            tenant1, t1_token = self._create_user(session, "tenant_joiner_1", role="tenant")
+            tenant2, t2_token = self._create_user(session, "tenant_joiner_2", role="tenant")
+
+            p_res = self.client.post(
+                "/api/v1/properties",
+                json={"name": "Nha Tro Gia Dinh"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            prop_id = p_res.json()["id"]
+
+            r_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms",
+                json={"room_number": "J101"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            room_data = r_res.json()
+            room_id = room_data["id"]
+            invite_code = room_data["invite_code"]
+
+            # 1. Invalid invite code -> HTTP 404
+            bad_join = self.client.post(
+                "/api/v1/rooms/join",
+                json={"invite_code": "INVALID_CODE_XYZ"},
+                headers=self._auth_headers(t1_token),
+                session=session,
+            )
+            self.assertEqual(bad_join.status_code, 404)
+
+            # 2. Tenant 1 joins with valid invite code -> HTTP 200
+            join_res = self.client.post(
+                "/api/v1/rooms/join",
+                json={"invite_code": invite_code.lower()},  # Case-insensitive
+                headers=self._auth_headers(t1_token),
+                session=session,
+            )
+            self.assertEqual(join_res.status_code, 200)
+            res_data = join_res.json()
+            self.assertEqual(res_data["id"], room_id)
+            self.assertEqual(res_data["status"], "active")
+            self.assertEqual(res_data["tenant_id"], tenant1.id)
+
+            # 3. Tenant 1 re-submitting same invite code is idempotent -> HTTP 200
+            rejoin_res = self.client.post(
+                "/api/v1/rooms/join",
+                json={"invite_code": invite_code},
+                headers=self._auth_headers(t1_token),
+                session=session,
+            )
+            self.assertEqual(rejoin_res.status_code, 200)
+
+            # 4. Tenant 2 trying to join already occupied room -> HTTP 400
+            occupied_res = self.client.post(
+                "/api/v1/rooms/join",
+                json={"invite_code": invite_code},
+                headers=self._auth_headers(t2_token),
+                session=session,
+            )
+            self.assertEqual(occupied_res.status_code, 400)
+
+            # 5. Landlord attempting to join -> HTTP 403 (tenant privilege required)
+            landlord_join = self.client.post(
+                "/api/v1/rooms/join",
+                json={"invite_code": invite_code},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(landlord_join.status_code, 403)
+
+    def test_landlord_remove_tenant_and_regenerate_invite(self) -> None:
+        """POST /properties/{p_id}/rooms/{r_id}/remove-tenant clears tenant and generates a fresh invite code."""
+        with Session(self.engine) as session:
+            landlord, l_token = self._create_user(session, "host_checkout", role="landlord")
+            tenant, t_token = self._create_user(session, "tenant_leaving", role="tenant")
+
+            p_res = self.client.post(
+                "/api/v1/properties",
+                json={"name": "Khu Tro Checkout"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            prop_id = p_res.json()["id"]
+
+            r_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms",
+                json={"room_number": "OUT-101"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            room_id = r_res.json()["id"]
+            orig_code = r_res.json()["invite_code"]
+
+            # Assign tenant
+            self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/assign-tenant",
+                json={"username": "tenant_leaving"},
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+
+            # Remove tenant
+            checkout_res = self.client.post(
+                f"/api/v1/properties/{prop_id}/rooms/{room_id}/remove-tenant",
+                headers=self._auth_headers(l_token),
+                session=session,
+            )
+            self.assertEqual(checkout_res.status_code, 200)
+            data = checkout_res.json()
+            self.assertEqual(data["status"], "empty")
+            self.assertIsNone(data["tenant_id"])
+            self.assertNotEqual(data["invite_code"], orig_code)
+            self.assertEqual(len(data["invite_code"]), 8)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -12,3 +12,63 @@
     @apply bg-slate-50 text-slate-800 antialiased font-sans;
   }
 }
+
+/* 100% FOSS W3C CSS Print Styles for A4 Portrait */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 15mm;
+  }
+
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide screen-only interactive elements */
+  header,
+  footer,
+  nav,
+  button,
+  .no-print,
+  .print-hidden,
+  .fixed,
+  [role="dialog"] > div:first-child {
+    display: none !important;
+  }
+
+  /* Ensure main layout and card container take full width without overflow */
+  main,
+  .max-w-4xl,
+  .max-w-7xl,
+  .printable-invoice {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  .printable-card {
+    box-shadow: none !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Optimize contrast and clarity for tables */
+  table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 10px !important;
+  }
+}

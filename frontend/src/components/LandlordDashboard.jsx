@@ -3,8 +3,9 @@
  * SPDX-License-Identifier: MIT
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { properties as propApi, rooms as roomApi, auth as authApi } from '../services/api';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { properties as propApi, rooms as roomApi, invoices as invoiceApi } from '../services/api';
+import { useToast } from '../context/ToastContext';
 import {
   Building2,
   Plus,
@@ -14,6 +15,10 @@ import {
   Check,
   Calculator,
   UserX,
+  UserPlus,
+  User,
+  Phone,
+  Scale,
   FileText,
   AlertTriangle,
   ExternalLink,
@@ -22,26 +27,47 @@ import {
   ShieldAlert,
   ShieldCheck,
   RefreshCw,
+  SlidersHorizontal,
+  Send,
+  Printer,
+  Bookmark,
 } from 'lucide-react';
 
 export default function LandlordDashboard({ onViewPublicInvoice }) {
+  const { toast } = useToast();
   const [propertiesList, setPropertiesList] = useState([]);
   const [selectedProperty, setSelectedProperty] = useState(null);
   const [roomsList, setRoomsList] = useState([]);
   const [loadingProps, setLoadingProps] = useState(true);
   const [loadingRooms, setLoadingRooms] = useState(false);
-  const [error, setError] = useState(null);
-  const [successMsg, setSuccessMsg] = useState(null);
 
   // Modals / sub-views
   const [showAddPropModal, setShowAddPropModal] = useState(false);
   const [showAddRoomModal, setShowAddRoomModal] = useState(false);
+  const [showTariffConfigModal, setShowTariffConfigModal] = useState(false);
+  const [assignModalRoom, setAssignModalRoom] = useState(null);
+  const [assignInput, setAssignInput] = useState('');
+  const [assignLoading, setAssignLoading] = useState(false);
+  const [assignError, setAssignError] = useState(null);
   const [calcModalRoom, setCalcModalRoom] = useState(null);
   const [copiedToken, setCopiedToken] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+
+  // Room Invoices History Modal
+  const [historyModalRoom, setHistoryModalRoom] = useState(null);
+  const [roomInvoicesList, setRoomInvoicesList] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   // Forms
   const [propForm, setPropForm] = useState({ name: '', address: '' });
   const [roomForm, setRoomForm] = useState({ room_number: '', current_people_count: 1 });
+  const [tariffConfigForm, setTariffConfigForm] = useState({
+    tariff_type: 'statutory',
+    custom_elec_rate: 3500,
+    custom_water_rate: 20000,
+    custom_water_type: 'PER_M3',
+  });
+
   const [calcForm, setCalcForm] = useState({
     month_year: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
     elec_start: '',
@@ -49,7 +75,6 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
     water_start: '',
     water_end: '',
     elec_method: 'TIERED',
-    water_pricing_type: 'PER_M3',
     actual_collected_amount: '',
   });
   const [calcResult, setCalcResult] = useState(null);
@@ -58,7 +83,6 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
   // Load properties
   const fetchProperties = useCallback(async () => {
     setLoadingProps(true);
-    setError(null);
     try {
       const data = await propApi.list();
       setPropertiesList(data || []);
@@ -66,29 +90,32 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
         setSelectedProperty(data[0]);
       }
     } catch (err) {
-      setError(err.message || 'Không thể tải danh sách khu trọ');
+      toast.error(err.message || 'Không thể tải danh sách khu trọ');
     } finally {
       setLoadingProps(false);
     }
-  }, [selectedProperty]);
+  }, [selectedProperty, toast]);
 
   useEffect(() => {
     fetchProperties();
   }, [fetchProperties]);
 
   // Load rooms for selected property
-  const fetchRooms = useCallback(async (propertyId) => {
-    if (!propertyId) return;
-    setLoadingRooms(true);
-    try {
-      const data = await propApi.getRooms(propertyId);
-      setRoomsList(data || []);
-    } catch (err) {
-      setError(err.message || 'Không thể tải danh sách phòng');
-    } finally {
-      setLoadingRooms(false);
-    }
-  }, []);
+  const fetchRooms = useCallback(
+    async (propertyId) => {
+      if (!propertyId) return;
+      setLoadingRooms(true);
+      try {
+        const data = await propApi.getRooms(propertyId);
+        setRoomsList(data || []);
+      } catch (err) {
+        toast.error(err.message || 'Không thể tải danh sách phòng');
+      } finally {
+        setLoadingRooms(false);
+      }
+    },
+    [toast]
+  );
 
   useEffect(() => {
     if (selectedProperty?.id) {
@@ -96,7 +123,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
     }
   }, [selectedProperty, fetchRooms]);
 
-  // Handlers
+  // Handlers for Property & Rooms
   const handleCreateProperty = async (e) => {
     e.preventDefault();
     if (!propForm.name.trim()) return;
@@ -104,14 +131,46 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
       const created = await propApi.create({
         name: propForm.name.trim(),
         address: propForm.address.trim() || undefined,
+        tariff_type: 'statutory',
       });
       setPropForm({ name: '', address: '' });
       setShowAddPropModal(false);
       setPropertiesList((prev) => [...prev, created]);
       setSelectedProperty(created);
-      setSuccessMsg(`Đã thêm khu trọ "${created.name}"`);
+      toast.success(`Đã thêm khu trọ "${created.name}"`);
     } catch (err) {
-      setError(err.message || 'Không thể tạo khu trọ');
+      toast.error(err.message || 'Không thể tạo khu trọ');
+    }
+  };
+
+  const handleOpenTariffConfig = () => {
+    if (!selectedProperty) return;
+    setTariffConfigForm({
+      tariff_type: selectedProperty.tariff_type || 'statutory',
+      custom_elec_rate: selectedProperty.custom_elec_rate || 3500,
+      custom_water_rate: selectedProperty.custom_water_rate || 20000,
+      custom_water_type: selectedProperty.custom_water_type || 'PER_M3',
+    });
+    setShowTariffConfigModal(true);
+  };
+
+  const handleSavePropertyTariff = async (e) => {
+    e.preventDefault();
+    if (!selectedProperty?.id) return;
+    try {
+      const isCustom = tariffConfigForm.tariff_type === 'custom';
+      const updated = await propApi.update(selectedProperty.id, {
+        tariff_type: tariffConfigForm.tariff_type,
+        custom_elec_rate: isCustom ? Number(tariffConfigForm.custom_elec_rate) : null,
+        custom_water_rate: isCustom ? Number(tariffConfigForm.custom_water_rate) : null,
+        custom_water_type: isCustom ? tariffConfigForm.custom_water_type : 'PER_M3',
+      });
+      setSelectedProperty(updated);
+      setPropertiesList((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      setShowTariffConfigModal(false);
+      toast.success(`Đã lưu cấu hình biểu giá cho "${updated.name}"`);
+    } catch (err) {
+      toast.error(err.message || 'Không thể lưu biểu giá khu trọ');
     }
   };
 
@@ -126,9 +185,9 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
       setRoomForm({ room_number: '', current_people_count: 1 });
       setShowAddRoomModal(false);
       setRoomsList((prev) => [...prev, created]);
-      setSuccessMsg(`Đã tạo phòng ${created.room_number}`);
+      toast.success(`Đã tạo phòng ${created.room_number}`);
     } catch (err) {
-      setError(err.message || 'Không thể tạo phòng mới');
+      toast.error(err.message || 'Không thể tạo phòng mới');
     }
   };
 
@@ -137,11 +196,36 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
       return;
     }
     try {
-      const updated = await authApi.removeTenant(roomId);
+      const updated = await propApi.removeTenant(selectedProperty.id, roomId);
       setRoomsList((prev) => prev.map((r) => (r.id === roomId ? updated : r)));
-      setSuccessMsg(`Đã đặt lại trạng thái phòng ${roomNumber} sang TRỐNG`);
+      toast.success(`Đã đặt lại trạng thái phòng ${roomNumber} sang TRỐNG`);
     } catch (err) {
-      setError(err.message || 'Không thể xóa khách thuê');
+      toast.error(err.message || 'Không thể xóa khách thuê');
+    }
+  };
+
+  const handleAssignTenant = async (e) => {
+    e.preventDefault();
+    if (!assignModalRoom || !selectedProperty?.id) return;
+    const val = assignInput.trim();
+    if (!val) {
+      setAssignError('Vui lòng nhập Username hoặc Số điện thoại của người thuê.');
+      return;
+    }
+    setAssignLoading(true);
+    setAssignError(null);
+    try {
+      const isPhone = /^[0-9+\s()-]+$/.test(val);
+      const payload = isPhone ? { phone: val } : { username: val.replace(/^@/, '') };
+      const updated = await propApi.assignTenant(selectedProperty.id, assignModalRoom.id, payload);
+      setRoomsList((prev) => prev.map((r) => (r.id === assignModalRoom.id ? updated : r)));
+      toast.success(`Đã gán khách thuê vào Phòng ${assignModalRoom.room_number}`);
+      setAssignModalRoom(null);
+      setAssignInput('');
+    } catch (err) {
+      setAssignError(err.message || 'Không thể gán khách thuê vào phòng.');
+    } finally {
+      setAssignLoading(false);
     }
   };
 
@@ -151,11 +235,66 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
     setTimeout(() => setCopiedToken(null), 2500);
   };
 
+  // Open calculation modal
+  const handleOpenCalcModal = (room) => {
+    setCalcModalRoom(room);
+    setCalcResult(null);
+
+    // Pre-populate actual collected if property has custom rate
+    let prefilledRate = '';
+    if (selectedProperty?.tariff_type === 'custom' && selectedProperty.custom_elec_rate) {
+      prefilledRate = '';
+    }
+
+    setCalcForm({
+      month_year: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`,
+      elec_start: '',
+      elec_end: '',
+      water_start: '',
+      water_end: '',
+      elec_method: 'TIERED',
+      actual_collected_amount: prefilledRate,
+    });
+  };
+
+  // Live calculation estimation for Compliance Alert inside form
+  const liveFormCompliance = useMemo(() => {
+    const eStart = parseFloat(calcForm.elec_start);
+    const eEnd = parseFloat(calcForm.elec_end);
+    const wStart = parseFloat(calcForm.water_start);
+    const wEnd = parseFloat(calcForm.water_end);
+    const actualEntered = parseFloat(calcForm.actual_collected_amount);
+
+    if (isNaN(eStart) || isNaN(eEnd) || eEnd < eStart) return null;
+
+    const eKwh = eEnd - eStart;
+    const wM3 = !isNaN(wStart) && !isNaN(wEnd) && wEnd >= wStart ? wEnd - wStart : 0;
+
+    // Approximate Tier 3 statutory rate ~ 2380 * 1.08 = 2570 VND
+    const approxStatutoryElec = eKwh * 2570;
+    const approxStatutoryWater = wM3 * 8500 * 1.15;
+    const approxStatutoryTotal = Math.round(approxStatutoryElec + approxStatutoryWater);
+
+    let actualEst = isNaN(actualEntered) ? null : actualEntered;
+    if (actualEst === null && selectedProperty?.tariff_type === 'custom' && selectedProperty.custom_elec_rate) {
+      actualEst = Math.round(eKwh * selectedProperty.custom_elec_rate + wM3 * (selectedProperty.custom_water_rate || 8500));
+    }
+
+    if (actualEst !== null && actualEst > approxStatutoryTotal) {
+      return {
+        isOvercharged: true,
+        diff: actualEst - approxStatutoryTotal,
+        approxStatutoryTotal,
+        actualEst,
+      };
+    }
+    return null;
+  }, [calcForm, selectedProperty]);
+
   const handleCalculateInvoice = async (e) => {
     e.preventDefault();
     if (!calcModalRoom) return;
     setCalculating(true);
-    setError(null);
     setCalcResult(null);
     try {
       const elecStart = parseFloat(calcForm.elec_start);
@@ -191,68 +330,72 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
       const result = await roomApi.calculateInvoice(calcModalRoom.id, payload);
       setCalcResult(result);
-      setSuccessMsg(`Tính toán hóa đơn phòng ${calcModalRoom.room_number} thành công!`);
+      toast.success(`Đã lập bản nháp hóa đơn phòng ${calcModalRoom.room_number}`);
     } catch (err) {
-      setError(err.message || 'Lỗi khi tính toán hóa đơn');
+      toast.error(err.message || 'Lỗi khi tính toán hóa đơn');
     } finally {
       setCalculating(false);
     }
   };
 
+  // Publish Draft Invoice
+  const handlePublishInvoice = async (invoiceId) => {
+    setPublishing(true);
+    try {
+      const updated = await invoiceApi.publish(invoiceId);
+      if (calcResult && calcResult.id === invoiceId) {
+        setCalcResult(updated);
+      }
+      // If room history is open, update item in history
+      setRoomInvoicesList((prev) =>
+        prev.map((inv) => (inv.id === invoiceId ? updated : inv))
+      );
+      toast.success('Đã phát hành và gửi hóa đơn cho người thuê thành công!');
+    } catch (err) {
+      toast.error(err.message || 'Không thể phát hành hóa đơn');
+    } finally {
+      setPublishing(false);
+    }
+  };
+
+  // Open Room Invoices History
+  const handleOpenHistoryModal = async (room) => {
+    setHistoryModalRoom(room);
+    setLoadingHistory(true);
+    try {
+      const invs = await roomApi.getInvoices(room.id);
+      setRoomInvoicesList(invs || []);
+    } catch (err) {
+      toast.error(err.message || 'Không thể tải lịch sử hóa đơn phòng');
+      setRoomInvoicesList([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
-      {/* Top Banner Stats */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-primary-950 text-white p-6 sm:p-8 rounded-3xl shadow-xl border border-slate-700/50">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div>
-            <div className="flex items-center gap-2 text-primary-400 text-xs font-bold uppercase tracking-wider mb-2">
-              <Building2 className="w-4 h-4" />
-              <span>Bảng Quản Trị Chủ Trọ Minh Bạch</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
-              Quản lý Nhà trọ & Tính cước minh bạch
-            </h1>
-            <p className="text-slate-300 text-sm mt-1.5 max-w-2xl leading-relaxed">
-              Tự động áp dụng giá bán lẻ điện sinh hoạt bậc thang theo Quyết định 1279/QĐ-BCT và Nghị định 104/2022/NĐ-CP, bảo vệ cả chủ trọ và khách thuê.
-            </p>
-          </div>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            Quản lý Phòng trọ
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
+            Lập hóa đơn bản nháp, đối chiếu tuân thủ định mức và phát hành minh bạch
+          </p>
+        </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={() => setShowAddPropModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-500 text-white font-semibold text-sm rounded-xl shadow-lg shadow-primary-600/30 transition-all"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Thêm khu trọ mới</span>
-            </button>
-          </div>
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setShowAddPropModal(true)}
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Thêm khu trọ</span>
+          </button>
         </div>
       </div>
-
-      {/* Global Alerts */}
-      {error && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-sm text-red-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0" />
-            <span>{error}</span>
-          </div>
-          <button onClick={() => setError(null)} className="text-red-500 hover:text-red-700 font-bold ml-4">
-            ✕
-          </button>
-        </div>
-      )}
-
-      {successMsg && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-sm text-emerald-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Check className="w-5 h-5 text-emerald-600 flex-shrink-0" />
-            <span>{successMsg}</span>
-          </div>
-          <button onClick={() => setSuccessMsg(null)} className="text-emerald-500 hover:text-emerald-700 font-bold ml-4">
-            ✕
-          </button>
-        </div>
-      )}
 
       {/* Property Selector Tabs */}
       <div className="space-y-4">
@@ -322,24 +465,45 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
         <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 sm:p-8 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-3">
                 <h3 className="text-xl font-black text-slate-900">{selectedProperty.name}</h3>
                 <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700">
                   {roomsList.length} phòng
                 </span>
+                {/* Property Tariff Badge */}
+                {selectedProperty.tariff_type === 'custom' ? (
+                  <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                    Đơn giá riêng ({selectedProperty.custom_elec_rate?.toLocaleString('vi-VN')} đ/kWh)
+                  </span>
+                ) : (
+                  <span className="px-2.5 py-0.5 text-xs font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    Biểu giá Nhà nước (Chuẩn)
+                  </span>
+                )}
               </div>
               <p className="text-sm text-slate-500 mt-1">
                 {selectedProperty.address || 'Chưa cập nhật địa chỉ khu trọ'}
               </p>
             </div>
 
-            <button
-              onClick={() => setShowAddRoomModal(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Thêm phòng trọ</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleOpenTariffConfig}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all"
+                title="Cấu hình biểu giá áp dụng cho khu trọ này"
+              >
+                <SlidersHorizontal className="w-4 h-4 text-primary-600" />
+                <span>Cấu hình biểu giá</span>
+              </button>
+
+              <button
+                onClick={() => setShowAddRoomModal(true)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Thêm phòng trọ</span>
+              </button>
+            </div>
           </div>
 
           {/* Rooms Grid */}
@@ -365,7 +529,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 return (
                   <div
                     key={room.id}
-                    className="p-5 rounded-2xl border border-slate-200/90 bg-slate-50/50 hover:bg-white hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                    className="p-5 rounded-2xl border border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4"
                   >
                     <div>
                       {/* Room Header */}
@@ -374,8 +538,8 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                         <span
                           className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
                             isOccupied
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-slate-200 text-slate-700'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}
                         >
                           {isOccupied ? 'Đang thuê' : 'Trống'}
@@ -387,64 +551,246 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                         <div className="flex items-center justify-between">
                           <span className="flex items-center gap-1.5 text-slate-500">
                             <Users className="w-3.5 h-3.5" />
-                            <span>Số người đăng ký định mức:</span>
+                            <span>Định mức:</span>
                           </span>
                           <span className="font-bold text-slate-800">{room.current_people_count} người</span>
                         </div>
 
-                        <div className="flex items-center justify-between">
-                          <span className="text-slate-500">Mã mời phòng:</span>
-                          <button
-                            onClick={() => handleCopy(room.invite_code, `invite-${room.id}`)}
-                            title="Sao chép mã mời"
-                            className="inline-flex items-center gap-1 font-mono font-bold text-primary-700 hover:text-primary-800 bg-primary-100/70 hover:bg-primary-100 px-2 py-0.5 rounded transition-all"
-                          >
-                            <span>{room.invite_code}</span>
-                            {copiedToken === `invite-${room.id}` ? (
-                              <Check className="w-3 h-3 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-3 h-3 text-slate-400" />
-                            )}
-                          </button>
-                        </div>
-
-                        {isOccupied && (
-                          <div className="flex items-center justify-between text-slate-500">
-                            <span>Mã khách thuê:</span>
-                            <span className="font-mono text-slate-700">#{room.tenant_id}</span>
+                        {/* Occupied room: display tenant details */}
+                        {isOccupied ? (
+                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
+                            <div className="flex items-center justify-between text-slate-700">
+                              <span className="flex items-center gap-1 text-slate-500">
+                                <User className="w-3.5 h-3.5 text-primary-600" />
+                                <span>Khách thuê:</span>
+                              </span>
+                              <span className="font-bold text-slate-900">
+                                {room.tenant_name || `ID #${room.tenant_id}`}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between text-slate-700">
+                              <span className="flex items-center gap-1 text-slate-500">
+                                <Phone className="w-3.5 h-3.5 text-slate-400" />
+                                <span>Số điện thoại:</span>
+                              </span>
+                              <span className="font-medium text-slate-800">
+                                {room.tenant_phone || 'Chưa cập nhật SĐT'}
+                              </span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-between">
+                            <span className="text-slate-500">Mã mời phòng:</span>
+                            <button
+                              onClick={() => handleCopy(room.invite_code, `invite-${room.id}`)}
+                              title="Sao chép mã mời"
+                              className="inline-flex items-center gap-1 font-mono font-bold text-primary-700 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-2 py-0.5 rounded border border-primary-200 transition-all"
+                            >
+                              <span>{room.invite_code}</span>
+                              {copiedToken === `invite-${room.id}` ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3 text-slate-400" />
+                              )}
+                            </button>
                           </div>
                         )}
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="pt-3 border-t border-slate-200/80 flex items-center justify-between gap-2">
-                      <button
-                        onClick={() => {
-                          setCalcModalRoom(room);
-                          setCalcResult(null);
-                        }}
-                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
-                      >
-                        <Calculator className="w-3.5 h-3.5" />
-                        <span>Tính hóa đơn</span>
-                      </button>
-
-                      {isOccupied && (
+                    <div className="pt-3 border-t border-slate-100 space-y-2">
+                      <div className="flex items-center gap-2">
                         <button
-                          onClick={() => handleRemoveTenant(room.id, room.room_number)}
-                          title="Trả phòng & Đổi mã mời"
-                          className="px-2.5 py-2 text-slate-400 hover:text-red-600 hover:bg-red-50 border border-slate-200 rounded-xl transition-colors"
+                          onClick={() => handleOpenCalcModal(room)}
+                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
                         >
-                          <UserX className="w-4 h-4" />
+                          <Calculator className="w-3.5 h-3.5" />
+                          <span>Tính hóa đơn</span>
                         </button>
-                      )}
+
+                        <button
+                          onClick={() => handleOpenHistoryModal(room)}
+                          title="Xem lịch sử hóa đơn phòng này"
+                          className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-slate-500" />
+                          <span className="hidden sm:inline">Lịch sử</span>
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-end">
+                        {isOccupied ? (
+                          <button
+                            onClick={() => handleRemoveTenant(room.id, room.room_number)}
+                            title="Trả phòng & Đổi mã mời mới"
+                            className="text-[11px] text-red-600 hover:text-red-700 hover:underline flex items-center gap-1"
+                          >
+                            <UserX className="w-3 h-3" />
+                            <span>Trả phòng</span>
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setAssignModalRoom(room);
+                              setAssignInput('');
+                              setAssignError(null);
+                            }}
+                            className="text-[11px] text-primary-600 hover:text-primary-700 hover:underline flex items-center gap-1 font-semibold"
+                          >
+                            <UserPlus className="w-3 h-3" />
+                            <span>Gán người thuê</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* MODAL: Cấu hình biểu giá khu trọ (Property Tariff Config) */}
+      {showTariffConfigModal && selectedProperty && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl border border-slate-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-1">
+              Cấu hình biểu giá: {selectedProperty.name}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Lựa chọn áp dụng biểu giá chuẩn Nhà nước hoặc thỏa thuận riêng cho khu trọ này.
+            </p>
+
+            <form onSubmit={handleSavePropertyTariff} className="space-y-4">
+              {/* Choice radio buttons */}
+              <div className="space-y-2">
+                <label
+                  onClick={() => setTariffConfigForm({ ...tariffConfigForm, tariff_type: 'statutory' })}
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                    tariffConfigForm.tariff_type === 'statutory'
+                      ? 'border-primary-600 bg-primary-50/60 ring-2 ring-primary-500/20'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="tariff_type"
+                    checked={tariffConfigForm.tariff_type === 'statutory'}
+                    onChange={() => {}}
+                    className="mt-1 text-primary-600"
+                  />
+                  <div>
+                    <span className="text-sm font-bold text-slate-900 block">
+                      Biểu giá chuẩn Nhà nước (Mặc định - Khuyên dùng)
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      Điện 6 bậc lũy tiến theo QĐ 1279/QĐ-BCT hoặc Bậc 3 cố định theo TT 60/2025/TT-BCT. Hoàn toàn chuẩn luật.
+                    </span>
+                  </div>
+                </label>
+
+                <label
+                  onClick={() => setTariffConfigForm({ ...tariffConfigForm, tariff_type: 'custom' })}
+                  className={`flex items-start gap-3 p-3.5 rounded-2xl border cursor-pointer transition-all ${
+                    tariffConfigForm.tariff_type === 'custom'
+                      ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-500/20'
+                      : 'border-slate-200 hover:bg-slate-50'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="tariff_type"
+                    checked={tariffConfigForm.tariff_type === 'custom'}
+                    onChange={() => {}}
+                    className="mt-1 text-blue-600"
+                  />
+                  <div>
+                    <span className="text-sm font-bold text-slate-900 block">
+                      Đơn giá thỏa thuận tùy chọn
+                    </span>
+                    <span className="text-xs text-slate-500">
+                      Chủ trọ tự quy định đơn giá phẳng cho điện và nước sinh hoạt.
+                    </span>
+                  </div>
+                </label>
+              </div>
+
+              {/* Custom inputs when 'custom' is selected */}
+              {tariffConfigForm.tariff_type === 'custom' && (
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Đơn giá điện thỏa thuận (đ/kWh) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="50"
+                      value={tariffConfigForm.custom_elec_rate}
+                      onChange={(e) =>
+                        setTariffConfigForm({ ...tariffConfigForm, custom_elec_rate: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder="Ví dụ: 3500"
+                    />
+                  </div>
+
+                  {/* LIVE COMPLIANCE ALERT */}
+                  {Number(tariffConfigForm.custom_elec_rate) > 3460 && (
+                    <div className="p-3 bg-red-50 border border-red-300 rounded-xl text-xs text-red-900 space-y-1 animate-fadeIn">
+                      <div className="flex items-center gap-1.5 font-bold text-red-700">
+                        <ShieldAlert className="w-4 h-4 text-red-600" />
+                        <span>CẢNH BÁO VI PHẠM ĐỊNH MỨC (Nghị định 104/2022/NĐ-CP)</span>
+                      </div>
+                      <p className="leading-relaxed">
+                        Đơn giá bạn nhập (<strong>{Number(tariffConfigForm.custom_elec_rate).toLocaleString('vi-VN')} đ/kWh</strong>) cao hơn mức giá trần cao nhất quy định của Nhà nước (3.460 đ/kWh chưa VAT).
+                      </p>
+                      <p className="text-[11px] text-red-700">
+                        Chênh lệch thu lố dự kiến: <strong>+{(Number(tariffConfigForm.custom_elec_rate) - 3460).toLocaleString('vi-VN')} đ/kWh</strong>. Hành vi thu tiền điện cao hơn quy định có thể bị phạt tiền 20 - 30 triệu đồng!
+                      </p>
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Đơn giá nước sinh hoạt (đ/m³) *
+                    </label>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      step="500"
+                      value={tariffConfigForm.custom_water_rate}
+                      onChange={(e) =>
+                        setTariffConfigForm({ ...tariffConfigForm, custom_water_rate: e.target.value })
+                      }
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                      placeholder="Ví dụ: 20000"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowTariffConfigModal(false)}
+                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl shadow-sm"
+                >
+                  Lưu cấu hình
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 
@@ -564,7 +910,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
         </div>
       )}
 
-      {/* MODAL: Tính Hóa Đơn & Kiểm Tra Chênh Lệch Thu Lố */}
+      {/* MODAL: Tính Hóa Đơn (Draft vs Publish Flow) */}
       {calcModalRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-slate-200 my-8">
@@ -587,6 +933,15 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 ✕
               </button>
             </div>
+
+            {selectedProperty?.tariff_type === 'custom' && (
+              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-2xl text-xs text-blue-900 flex items-center justify-between gap-2">
+                <span className="font-semibold">
+                  ⚙️ Biểu giá khu trọ: <strong>{Number(selectedProperty.custom_elec_rate).toLocaleString('vi-VN')} đ/kWh</strong> • Nước: <strong>{Number(selectedProperty.custom_water_rate).toLocaleString('vi-VN')} đ/{selectedProperty.custom_water_type === 'PER_PERSON' ? 'người' : 'm³'}</strong>
+                </span>
+                <span className="text-[10px] text-blue-700 font-medium">Tự động áp dụng & đối chiếu</span>
+              </div>
+            )}
 
             <form onSubmit={handleCalculateInvoice} className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -687,52 +1042,75 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
               {/* Tiền thực thu để đối chiếu thu lố */}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1 uppercase">
-                  Số tiền chủ trọ đã thu / dự định thu (VNĐ)
+                  Số tiền chủ trọ dự định thu / đã thu (VNĐ)
                 </label>
                 <input
                   type="number"
                   value={calcForm.actual_collected_amount}
                   onChange={(e) => setCalcForm({ ...calcForm, actual_collected_amount: e.target.value })}
-                  placeholder="Nhập số tiền thực thu để hệ thống tự động kiểm tra thu lố"
+                  placeholder="Để trống nếu thu đúng theo luật định"
                   className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
                 />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Hệ thống sẽ đối chiếu với giá luật định để phát hiện chênh lệch thu lố.
-                </p>
               </div>
+
+              {/* LIVE COMPLIANCE ALERT IN FORM */}
+              {liveFormCompliance && (
+                <div className="p-3.5 bg-red-50 border-2 border-red-400 rounded-2xl text-xs text-red-900 space-y-1">
+                  <div className="flex items-center gap-2 font-black text-red-700">
+                    <ShieldAlert className="w-4 h-4" />
+                    <span>CẢNH BÁO VI PHẠM ĐỊNH MỨC (Nghị định 104/2022/NĐ-CP)</span>
+                  </div>
+                  <p>
+                    Số tiền bạn nhập thu (<strong>{liveFormCompliance.actualEst.toLocaleString('vi-VN')} đ</strong>) cao hơn mức luật định dự kiến (~{liveFormCompliance.approxStatutoryTotal.toLocaleString('vi-VN')} đ). Chênh lệch thu lố dự kiến: <strong>+{liveFormCompliance.diff.toLocaleString('vi-VN')} đ</strong>!
+                  </p>
+                </div>
+              )}
 
               <button
                 type="submit"
                 disabled={calculating}
-                className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-60"
               >
                 {calculating ? (
                   <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                 ) : (
                   <>
                     <Calculator className="w-4 h-4" />
-                    <span>Tính cước ngay & Lưu hóa đơn</span>
+                    <span>Tạo bản nháp hóa đơn (Draft)</span>
                   </>
                 )}
               </button>
             </form>
 
-            {/* BREAKDOWN RESULTS & DISPUTE ALERT */}
+            {/* BREAKDOWN RESULTS & DRAFT / PUBLISH ACTIONS */}
             {calcResult && (
               <div className="mt-6 pt-6 border-t border-slate-200 space-y-4">
-                <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-primary-600" />
-                  <span>Kết quả tính toán chi tiết</span>
-                </h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary-600" />
+                    <span>Kết quả tính toán</span>
+                  </h4>
+
+                  {/* Status Badge */}
+                  {calcResult.status === 'published' ? (
+                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full border border-emerald-300">
+                      Đã phát hành (Published)
+                    </span>
+                  ) : (
+                    <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-300">
+                      Bản nháp (Draft) — Chưa gửi khách
+                    </span>
+                  )}
+                </div>
 
                 {/* Overcharge Alert */}
                 {calcResult.diff_amount > 0 ? (
-                  <div className="p-4 bg-overcharge-50 border-2 border-overcharge-500/80 rounded-2xl text-overcharge-900 space-y-1.5 shadow-sm">
-                    <div className="flex items-center gap-2 font-black text-overcharge-600 text-sm">
+                  <div className="p-4 bg-red-50 border-2 border-red-500 rounded-2xl text-red-900 space-y-1.5 shadow-sm">
+                    <div className="flex items-center gap-2 font-black text-red-600 text-sm">
                       <ShieldAlert className="w-5 h-5" />
                       <span>CẢNH BÁO: CHÊNH LỆCH THU LỐ {Number(calcResult.diff_amount).toLocaleString('vi-VN')} VNĐ!</span>
                     </div>
-                    <p className="text-xs text-overcharge-700 leading-relaxed">
+                    <p className="text-xs text-red-800 leading-relaxed">
                       Tiền thực thu ({Number(calcResult.actual_collected_amount).toLocaleString('vi-VN')} đ) cao hơn quy định pháp luật ({Number(calcResult.total_statutory_amount).toLocaleString('vi-VN')} đ). Vi phạm quy định tại Nghị định 104/2022/NĐ-CP và có nguy cơ bị xử phạt hành chính từ 20-30 triệu đồng.
                     </p>
                   </div>
@@ -769,46 +1147,211 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                   </div>
                 </div>
 
-                {/* Public Share Link */}
-                {calcResult.share_token && (
-                  <div className="p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                {/* Short Code & Publish Actions */}
+                <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-3">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                     <div>
-                      <p className="text-xs font-bold text-emerald-400">Link tra cứu công khai (Tính năng 17)</p>
-                      <p className="text-[11px] text-slate-300">Khách thuê có thể xem hóa đơn minh bạch không cần đăng nhập</p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-emerald-400">Mã tra cứu ngắn:</span>
+                        <span className="px-2 py-0.5 bg-white/20 rounded font-mono font-bold text-xs text-white">
+                          {calcResult.short_code || 'HD-DRAFT'}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Người thuê có thể nhập trực tiếp mã này vào Cổng tra cứu công khai
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(`${window.location.origin}/public/${encodeURIComponent(calcResult.share_token)}`, 'share-link')}
-                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
-                      >
-                        {copiedToken === 'share-link' ? (
-                          <>
-                            <Check className="w-3.5 h-3.5 text-emerald-400" />
-                            <span>Đã sao chép!</span>
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3.5 h-3.5 text-slate-300" />
-                            <span>Sao chép link</span>
-                          </>
-                        )}
-                      </button>
+                      {calcResult.short_code && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(calcResult.short_code, 'short-code')}
+                          className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-slate-300" />
+                          <span>{copiedToken === 'short-code' ? 'Đã sao chép!' : 'Chép mã'}</span>
+                        </button>
+                      )}
 
                       <button
                         type="button"
                         onClick={() => onViewPublicInvoice?.(calcResult.share_token)}
-                        className="px-3 py-1.5 bg-primary-600 hover:bg-primary-500 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
-                        <span>Xem trang</span>
+                        <span>Xem hóa đơn</span>
                       </button>
                     </div>
                   </div>
-                )}
+
+                  {/* Publish Button */}
+                  {calcResult.status !== 'published' ? (
+                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3">
+                      <span className="text-xs text-amber-300">
+                        Hóa đơn hiện ở trạng thái <strong>Bản nháp</strong> và chưa hiển thị cho người thuê.
+                      </span>
+                      <button
+                        type="button"
+                        disabled={publishing}
+                        onClick={() => handlePublishInvoice(calcResult.id)}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md flex-shrink-0"
+                      >
+                        {publishing ? (
+                          <span className="inline-block animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Phát hành & Gửi cho người thuê</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="pt-2 border-t border-slate-800 flex items-center gap-2 text-xs text-emerald-400">
+                      <Check className="w-4 h-4" />
+                      <span>Hóa đơn đã được phát hành và gửi đến Dashboard của người thuê trọ.</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Lịch sử hóa đơn phòng */}
+      {historyModalRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-xl w-full shadow-2xl border border-slate-200 my-8">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-900">
+                  Lịch sử hóa đơn — Phòng {historyModalRoom.room_number}
+                </h3>
+                <p className="text-xs text-slate-500">Danh sách các kỳ hóa đơn đã lập</p>
+              </div>
+              <button
+                onClick={() => setHistoryModalRoom(null)}
+                className="text-slate-400 hover:text-slate-700 font-bold text-lg p-1.5"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div className="p-8 text-center text-slate-400 text-sm">Đang tải lịch sử...</div>
+            ) : roomInvoicesList.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-xs">
+                Chưa có hóa đơn nào được tạo cho phòng này.
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                {roomInvoicesList.map((inv) => (
+                  <div
+                    key={inv.id}
+                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                  >
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm text-slate-900">Tháng {inv.month_year}</span>
+                        {inv.status === 'published' ? (
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Đã phát hành
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+                            Bản nháp
+                          </span>
+                        )}
+                        {inv.short_code && (
+                          <span className="px-2 py-0.5 font-mono text-[10px] font-bold bg-white text-slate-700 border border-slate-300 rounded">
+                            {inv.short_code}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1">
+                        Tổng tiền: <strong>{Number(inv.total_statutory_amount).toLocaleString('vi-VN')} đ</strong> (Điện: {inv.elec_kwh} kWh, Nước: {inv.water_usage} m³)
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {inv.status !== 'published' && (
+                        <button
+                          onClick={() => handlePublishInvoice(inv.id)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-sm"
+                        >
+                          <Send className="w-3 h-3" />
+                          <span>Phát hành</span>
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          setHistoryModalRoom(null);
+                          onViewPublicInvoice?.(inv.share_token);
+                        }}
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Xem</span>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Gán người thuê */}
+      {assignModalRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl border border-slate-200">
+            <h3 className="text-xl font-bold text-slate-900 mb-2">
+              Gán khách thuê vào Phòng {assignModalRoom.room_number}
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Nhập username hoặc số điện thoại của người thuê để gán trực tiếp vào phòng.
+            </p>
+            {assignError && (
+              <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                {assignError}
+              </div>
+            )}
+            <form onSubmit={handleAssignTenant} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5 uppercase">
+                  Username hoặc Số điện thoại người thuê
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={assignInput}
+                  onChange={(e) => setAssignInput(e.target.value)}
+                  placeholder="Ví dụ: nguyenvana hoặc 0912345678"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAssignModalRoom(null)}
+                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={assignLoading}
+                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl disabled:opacity-60"
+                >
+                  {assignLoading ? 'Đang gán...' : 'Gán người thuê'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

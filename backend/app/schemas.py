@@ -66,6 +66,10 @@ class PropertyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     address: Optional[str] = Field(default=None, max_length=300)
     landlord_id: Optional[int] = None
+    tariff_type: Optional[str] = "statutory"  # "statutory" | "custom"
+    custom_elec_rate: Optional[float] = Field(default=None, ge=0.0)
+    custom_water_rate: Optional[float] = Field(default=None, ge=0.0)
+    custom_water_type: Optional[str] = "PER_M3"
 
     @field_validator("name")
     @classmethod
@@ -76,12 +80,26 @@ class PropertyCreate(BaseModel):
         return cleaned
 
 
+class PropertyUpdate(BaseModel):
+    """Schema for updating a rental property and its tariff configuration."""
+    name: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    address: Optional[str] = Field(default=None, max_length=300)
+    tariff_type: Optional[str] = None
+    custom_elec_rate: Optional[float] = Field(default=None, ge=0.0)
+    custom_water_rate: Optional[float] = Field(default=None, ge=0.0)
+    custom_water_type: Optional[str] = None
+
+
 class PropertyOut(BaseModel):
     """Schema for returning property details."""
     id: int
     name: str
     address: Optional[str] = None
     landlord_id: Optional[int] = None
+    tariff_type: Optional[str] = "statutory"
+    custom_elec_rate: Optional[float] = None
+    custom_water_rate: Optional[float] = None
+    custom_water_type: Optional[str] = "PER_M3"
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -105,7 +123,7 @@ class RoomCreate(BaseModel):
 
 
 class RoomOut(BaseModel):
-    """Schema for returning room details."""
+    """Schema for returning room details enriched with tenant and property metadata."""
     id: int
     room_number: str
     property_id: Optional[int] = None
@@ -113,8 +131,46 @@ class RoomOut(BaseModel):
     status: str
     current_people_count: int
     tenant_id: Optional[int] = None
+    tenant_name: Optional[str] = None
+    tenant_phone: Optional[str] = None
+    property_name: Optional[str] = None
+    property_address: Optional[str] = None
+    landlord_name: Optional[str] = None
+    landlord_phone: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TenantRoomOut(RoomOut):
+    """Schema for returning room information tailored to the assigned tenant."""
+    pass
+
+
+class AssignTenantRequest(BaseModel):
+    """Schema for landlord assigning a tenant to a room via username or phone."""
+    username: Optional[str] = Field(default=None, max_length=50, description="Tenant username")
+    phone: Optional[str] = Field(default=None, max_length=20, description="Tenant phone number")
+
+    @field_validator("username", "phone")
+    @classmethod
+    def clean_fields(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            cleaned = v.strip()
+            return cleaned if cleaned else None
+        return None
+
+
+class RoomJoinRequest(BaseModel):
+    """Schema for a tenant self-associating with a room via invite code."""
+    invite_code: str = Field(..., min_length=1, max_length=20, description="Room invite code")
+
+    @field_validator("invite_code")
+    @classmethod
+    def validate_code(cls, v: str) -> str:
+        cleaned = v.strip().upper()
+        if not cleaned:
+            raise ValueError("Invite code cannot be empty or whitespace")
+        return cleaned
 
 
 class SystemConfigUpdate(BaseModel):
@@ -262,6 +318,9 @@ class InvoiceOut(BaseModel):
     actual_collected_amount: float
     diff_amount: float
     share_token: str
+    short_code: Optional[str] = None
+    status: str = "draft"
+    published_at: Optional[datetime] = None
     breakdown_json: Optional[str] = None
     breakdown: Optional[Dict[str, Any]] = None
     room_number: Optional[str] = None

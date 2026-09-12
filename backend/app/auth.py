@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: MIT
 """FastAPI authentication, role-based access control, and room invite code lifecycle router."""
 
-from typing import Optional
+from collections import defaultdict
+import time
+from typing import Dict, List, Optional
 from .compat import (
     APIRouter,
     Depends,
@@ -22,6 +24,31 @@ from .security import (
     get_password_hash,
     verify_password,
 )
+
+# In-memory sliding window rate limiting buckets
+_RATE_LIMIT_BUCKET: Dict[str, List[float]] = defaultdict(list)
+
+
+def reset_rate_limits() -> None:
+    """Clear in-memory rate limiting bucket for test isolation."""
+    _RATE_LIMIT_BUCKET.clear()
+
+
+def check_rate_limit(
+    identifier: str,
+    max_requests: int = 60,
+    window_seconds: int = 60,
+) -> bool:
+    """Check sliding window rate limiting for IP/session identifier."""
+    now = time.time()
+    cutoff = now - window_seconds
+    timestamps = [t for t in _RATE_LIMIT_BUCKET[identifier] if t > cutoff]
+    if len(timestamps) >= max_requests:
+        return False
+    timestamps.append(now)
+    _RATE_LIMIT_BUCKET[identifier] = timestamps
+    return True
+
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -101,18 +128,38 @@ def require_tenant(current_user: User = Depends(get_current_user)) -> User:
 def register(
     user_data: UserRegister,
     session: Session = Depends(get_session),
+    client_ip: Optional[str] = Header(None, alias="X-Forwarded-For"),
+    x_real_ip: Optional[str] = Header(None, alias="X-Real-IP"),
 ) -> UserOut:
     """Register a new user account (Landlord or Tenant).
 
     If the user is a tenant and provides a valid invite_code, they are automatically
     assigned to the corresponding room, setting its status to 'active'.
     """
+    effective_ip = client_ip or x_real_ip
+    if isinstance(effective_ip, str) and effective_ip.strip():
+        ip_key = effective_ip.split(",")[0].strip()
+        if not check_rate_limit(f"reg:{ip_key}", max_requests=20, window_seconds=60):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Quá nhiều yêu cầu đăng ký, vui lòng thử lại sau ít phút",
+            )
+
+    # Rate limiting per username to protect against single-target registration flooding
+    if user_data.username:
+        u_key = user_data.username.strip().lower()
+        if not check_rate_limit(f"reg_user:{u_key}", max_requests=10, window_seconds=60):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Quá nhiều yêu cầu đăng ký cho tài khoản này, vui lòng thử lại sau ít phút",
+            )
+
     # Check username collision
     existing = session.exec(select(User).where(User.username == user_data.username)).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Username '{user_data.username}' is already registered",
+            detail=f"Tên đăng nhập đã tồn tại, vui lòng chọn tên khác (Username '{user_data.username}' is already registered)",
         )
 
     # If tenant with invite code, validate room existence and occupancy upfront
@@ -162,8 +209,28 @@ def register(
 def login(
     login_data: UserLogin,
     session: Session = Depends(get_session),
+    client_ip: Optional[str] = Header(None, alias="X-Forwarded-For"),
+    x_real_ip: Optional[str] = Header(None, alias="X-Real-IP"),
 ) -> TokenResponse:
     """Authenticate user credentials and issue a JWT access token."""
+    effective_ip = client_ip or x_real_ip
+    if isinstance(effective_ip, str) and effective_ip.strip():
+        ip_key = effective_ip.split(",")[0].strip()
+        if not check_rate_limit(f"login:{ip_key}", max_requests=30, window_seconds=60):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Quá nhiều yêu cầu đăng nhập, vui lòng thử lại sau ít phút",
+            )
+
+    # Protect against brute-forcing passwords for a specific user
+    if login_data.username:
+        u_key = login_data.username.strip().lower()
+        if not check_rate_limit(f"login_user:{u_key}", max_requests=20, window_seconds=60):
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail="Quá nhiều yêu cầu đăng nhập cho tài khoản này, vui lòng thử lại sau ít phút",
+            )
+
     user = session.exec(select(User).where(User.username == login_data.username)).first()
     if not user or not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(
@@ -210,6 +277,10 @@ def remove_tenant_from_room(
             detail=f"Room with id {room_id} not found",
         )
 
+    prop: Optional[Property] = None
+    landlord_name: Optional[str] = None
+    landlord_phone: Optional[str] = None
+
     # If room is part of a property, verify landlord ownership
     if room.property_id is not None:
         prop = session.get(Property, room.property_id)
@@ -223,9 +294,28 @@ def remove_tenant_from_room(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You are not authorized to manage rooms in this property",
             )
+        if prop.landlord_id is not None:
+            landlord = session.get(User, prop.landlord_id)
+            if landlord:
+                landlord_name = landlord.full_name or landlord.username
+                landlord_phone = landlord.phone
 
     room.remove_tenant()
     session.add(room)
     session.commit()
     session.refresh(room)
-    return RoomOut.model_validate(room)
+    return RoomOut(
+        id=room.id,
+        room_number=room.room_number,
+        property_id=room.property_id,
+        invite_code=room.invite_code,
+        status=room.status,
+        current_people_count=room.current_people_count,
+        tenant_id=room.tenant_id,
+        tenant_name=None,
+        tenant_phone=None,
+        property_name=prop.name if prop else None,
+        property_address=prop.address if prop else None,
+        landlord_name=landlord_name,
+        landlord_phone=landlord_phone,
+    )

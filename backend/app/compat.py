@@ -196,6 +196,14 @@ if not SQLMODEL_INSTALLED:
                 sql = f"CREATE TABLE IF NOT EXISTS {tablename} (\n  " + ",\n  ".join(all_defs) + "\n);"
                 cursor.execute(sql)
 
+                # Auto-migrate: check if table already exists, and if any model columns are missing, add them
+                cursor.execute(f"PRAGMA table_info({tablename});")
+                existing_cols = {row[1] for row in cursor.fetchall()}
+                for fname, finfo in model_cls.model_fields.items():
+                    if fname not in existing_cols:
+                        sql_type = _python_type_to_sqlite(finfo.annotation)
+                        cursor.execute(f'ALTER TABLE {tablename} ADD COLUMN "{fname}" {sql_type};')
+
                 for fname, finfo in model_cls.model_fields.items():
                     if _get_field_meta(finfo, "index", False) and not _get_field_meta(finfo, "primary_key", False):
                         idx_sql = f"CREATE INDEX IF NOT EXISTS idx_{tablename}_{fname} ON {tablename} ({fname});"
@@ -584,6 +592,12 @@ except ImportError:
     HTMLResponse = None  # type: ignore
     StaticFiles = None  # type: ignore
 
+    class Request:  # type: ignore[no-redef]
+        """Lightweight Request mock for compatibility."""
+        def __init__(self, headers: Optional[Dict[str, str]] = None, client: Optional[Any] = None):
+            self.headers = headers or {}
+            self.client = client
+
 if FASTAPI_INSTALLED:
     class _ParamInfo:
         pass
@@ -701,6 +715,7 @@ if not FASTAPI_INSTALLED:
         HTTP_405_METHOD_NOT_ALLOWED = 405
         HTTP_409_CONFLICT = 409
         HTTP_422_UNPROCESSABLE_ENTITY = 422
+        HTTP_429_TOO_MANY_REQUESTS = 429
         HTTP_500_INTERNAL_SERVER_ERROR = 500
 
     status = _HttpStatus()
@@ -989,9 +1004,19 @@ def _resolve_dependencies(
     lower_headers = {k.lower(): v for k, v in headers.items()}
 
     for param_name, param in sig.parameters.items():
+        ann = param.annotation
+        target_cls = ann
+        is_int_type = ann is int or ann == "int"
+        if get_origin(ann) is Union:
+            union_args = [a for a in get_args(ann) if a is not type(None)]
+            if int in union_args:
+                is_int_type = True
+            if len(union_args) == 1:
+                target_cls = union_args[0]
+
         if param_name in path_params:
             val = path_params[param_name]
-            if param.annotation is int or param.annotation == "int":
+            if is_int_type:
                 try:
                     val = int(val)
                 except (ValueError, TypeError):
@@ -1000,7 +1025,7 @@ def _resolve_dependencies(
             continue
         elif "id" in path_params and (param_name.endswith("_id") or param_name == "id"):
             val = path_params["id"]
-            if param.annotation is int or param.annotation == "int":
+            if is_int_type:
                 try:
                     val = int(val)
                 except (ValueError, TypeError):
@@ -1011,7 +1036,7 @@ def _resolve_dependencies(
             id_candidates = [v for k, v in path_params.items() if k.endswith("_id")]
             if id_candidates:
                 val = id_candidates[0]
-                if param.annotation is int or param.annotation == "int":
+                if is_int_type:
                     try:
                         val = int(val)
                     except (ValueError, TypeError):
@@ -1060,20 +1085,21 @@ def _resolve_dependencies(
             kwargs[param_name] = val
             continue
 
-        ann = param.annotation
-        if hasattr(ann, "model_validate") or (isinstance(ann, type) and issubclass(ann, BaseModel)):
+        if hasattr(target_cls, "model_validate") or (isinstance(target_cls, type) and issubclass(target_cls, BaseModel)):
             if body_data is not None:
-                if isinstance(ann, type) and isinstance(body_data, ann):
+                if isinstance(target_cls, type) and isinstance(body_data, target_cls):
                     kwargs[param_name] = body_data
                 elif isinstance(body_data, dict):
-                    kwargs[param_name] = ann(**body_data)
+                    kwargs[param_name] = target_cls(**body_data)
                 else:
                     kwargs[param_name] = body_data
+            elif default is not inspect.Parameter.empty:
+                kwargs[param_name] = default
             continue
 
         if param_name in query_params:
             val = query_params[param_name]
-            if ann is int or ann == "int":
+            if is_int_type:
                 try:
                     val = int(val)
                 except (ValueError, TypeError):

@@ -20,6 +20,7 @@ import {
   Printer,
   Home,
   CheckCircle2,
+  Bookmark,
 } from 'lucide-react';
 
 export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
@@ -29,10 +30,19 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
 
   const fetchInvoice = useCallback(async (token) => {
-    const cleaned = token?.trim();
+    let cleaned = token?.trim();
     if (!cleaned) return;
+    if (cleaned.includes('/public/')) {
+      cleaned = cleaned.split('/public/').pop().split('?')[0].split('#')[0].trim();
+    } else if (cleaned.includes('/')) {
+      cleaned = cleaned.split('/').pop().split('?')[0].split('#')[0].trim();
+    }
+    cleaned = cleaned.replace(/^#/, '').trim();
+    if (!cleaned) return;
+
     setLoading(true);
     setError(null);
     try {
@@ -40,7 +50,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
       setInvoice(data);
       setShareToken(cleaned);
     } catch (err) {
-      setError(err.message || `Không tìm thấy hóa đơn với mã chia sẻ "${cleaned}"`);
+      setError(err.message || `Không tìm thấy hóa đơn với mã "${cleaned}"`);
       setInvoice(null);
     } finally {
       setLoading(false);
@@ -56,18 +66,30 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
   const handleSearch = (e) => {
     e.preventDefault();
-    const token = tokenInput.trim();
+    let token = tokenInput.trim();
     if (token) {
+      if (token.includes('/public/')) {
+        token = token.split('/public/').pop().split('?')[0].split('#')[0].trim();
+      } else if (token.includes('/')) {
+        token = token.split('/').pop().split('?')[0].split('#')[0].trim();
+      }
+      token = token.replace(/^#/, '').trim();
       fetchInvoice(token);
       window.history.pushState(null, '', `/public/${encodeURIComponent(token)}`);
     }
   };
 
   const handleCopyLink = () => {
-    const fullUrl = `${window.location.origin}/public/${encodeURIComponent(shareToken)}`;
+    const fullUrl = `${window.location.origin}/public/${encodeURIComponent(invoice?.share_token || shareToken)}`;
     navigator.clipboard?.writeText(fullUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyCode = (code) => {
+    navigator.clipboard?.writeText(code);
+    setCopiedCode(true);
+    setTimeout(() => setCopiedCode(false), 2000);
   };
 
   const breakdown =
@@ -85,21 +107,22 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
       : {});
   const elecBreakdown = breakdown.electricity || {};
   const waterBreakdown = breakdown.water || {};
+  const meterReading = breakdown.meter_reading || {};
   const dispute = breakdown.dispute || {};
   const isOvercharged = (invoice?.diff_amount || 0) > 0;
 
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Top Search Bar */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-sm">
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-sm no-print">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-primary-600">
-              Tính năng 17 — Cổng Tra Cứu Hóa Đơn Công Khai
+              Cổng Tra Cứu Hóa Đơn Công Khai
             </span>
-            <h1 className="text-2xl font-black text-slate-900 mt-1">
-              Tra cứu hóa đơn điện nước minh bạch
-            </h1>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Nhập mã chia sẻ token hoặc Mã hóa đơn ngắn (ví dụ: HD-89B2)
+            </p>
           </div>
 
           {onBackToHome && (
@@ -120,7 +143,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
               required
               value={tokenInput}
               onChange={(e) => setTokenInput(e.target.value)}
-              placeholder="Dán mã chia sẻ (Share Token) vào đây..."
+              placeholder="Nhập mã tra cứu ngắn (ví dụ: HD-89B2) hoặc link share token..."
               className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
             />
           </div>
@@ -136,7 +159,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
       {/* Error state */}
       {error && (
-        <div className="p-6 bg-red-50 border border-red-200 rounded-3xl text-sm text-red-800 flex items-start gap-3 shadow-sm">
+        <div className="p-6 bg-red-50 border border-red-200 rounded-3xl text-sm text-red-800 flex items-start gap-3 shadow-sm no-print">
           <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
           <div>
             <p className="font-bold">Không tìm thấy thông tin hóa đơn</p>
@@ -147,7 +170,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
       {/* Loading state */}
       {loading && (
-        <div className="p-12 text-center text-slate-400 text-sm">
+        <div className="p-12 text-center text-slate-400 text-sm no-print">
           <span className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary-500 border-t-transparent mb-3" />
           <p>Đang tải dữ liệu hóa đơn công khai...</p>
         </div>
@@ -155,26 +178,50 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
       {/* Invoice Card */}
       {invoice && !loading && (
-        <div className="bg-white rounded-3xl border border-slate-200/90 shadow-xl overflow-hidden print:shadow-none print:border-none">
+        <div className="printable-invoice bg-white rounded-3xl border border-slate-200/90 shadow-xl overflow-hidden print:shadow-none print:border-none">
           {/* Invoice Header */}
-          <div className="p-6 sm:p-8 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="p-6 sm:p-8 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:bg-slate-100 print:text-slate-900 print:border-b print:border-slate-300">
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-2xl font-black tracking-tight text-white">tro.</span>
-                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                  Bản kê minh bạch công khai
+                <span className="text-2xl font-black tracking-tight text-white print:text-slate-900">
+                  tro<span className="text-primary-500">.</span>
                 </span>
+                {invoice.status === 'published' ? (
+                  <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 print:text-emerald-800 print:bg-emerald-100">
+                    Đã phát hành
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 print:text-amber-800 print:bg-amber-100">
+                    Bản nháp (Draft)
+                  </span>
+                )}
+                {invoice.short_code && (
+                  <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-white/10 text-white border border-white/20 print:text-slate-800 print:bg-slate-200">
+                    Mã: {invoice.short_code}
+                  </span>
+                )}
               </div>
-              <h2 className="text-xl sm:text-2xl font-black mt-2">
+              <h2 className="text-xl sm:text-2xl font-black mt-2 print:text-xl">
                 Hóa đơn Điện Nước — Tháng {invoice.month_year}
               </h2>
-              <p className="text-xs text-slate-400 mt-1">
+              <p className="text-xs text-slate-400 print:text-slate-600 mt-1">
                 {(breakdown.property_name || invoice.property_name) ? `${breakdown.property_name || invoice.property_name} • ` : ''}
                 Phòng {breakdown.room_number || invoice.room_number || invoice.room_id}
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 no-print">
+              {invoice.short_code && (
+                <button
+                  onClick={() => handleCopyCode(invoice.short_code)}
+                  className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  title="Sao chép mã tra cứu"
+                >
+                  <Bookmark className="w-3.5 h-3.5 text-primary-400" />
+                  <span>{copiedCode ? 'Đã chép mã!' : invoice.short_code}</span>
+                </button>
+              )}
+
               <button
                 onClick={handleCopyLink}
                 className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -185,10 +232,10 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
               <button
                 onClick={() => window.print()}
-                className="px-3.5 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors print:hidden"
+                className="px-3.5 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
               >
                 <Printer className="w-4 h-4" />
-                <span>In hóa đơn</span>
+                <span>In hóa đơn / Lưu PDF</span>
               </button>
             </div>
           </div>
@@ -196,18 +243,18 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
           {/* DISPUTE OVERCHARGE BANNER */}
           <div className="p-6 border-b border-slate-200">
             {isOvercharged ? (
-              <div className="p-5 bg-overcharge-50 border-2 border-overcharge-500 rounded-2xl text-overcharge-900 space-y-2">
-                <div className="flex items-center gap-2 text-base font-black text-overcharge-600">
+              <div className="p-5 bg-red-50 border-2 border-red-500 rounded-2xl text-red-900 space-y-2">
+                <div className="flex items-center gap-2 text-base font-black text-red-600">
                   <ShieldAlert className="w-6 h-6" />
                   <span>PHÁT HIỆN THU LỐ: {Number(invoice.diff_amount).toLocaleString('vi-VN')} VNĐ!</span>
                 </div>
-                <p className="text-xs sm:text-sm text-overcharge-800 leading-relaxed">
-                  Căn cứ Điều 12 Nghị định 134/2013/NĐ-CP (sửa đổi, bổ sung bởi Nghị định 17/2022/NĐ-CP) và Nghị định 104/2022/NĐ-CP, hành vi thu tiền điện của người thuê trọ cao hơn giá quy định của nhà nước có thể bị phạt tiền từ <strong>20.000.000 đ đến 30.000.000 đ</strong>.
+                <p className="text-xs sm:text-sm text-red-800 leading-relaxed">
+                  Căn cứ Điều 12 Nghị định 134/2013/NĐ-CP (sửa đổi bởi Nghị định 17/2022/NĐ-CP) và Nghị định 104/2022/NĐ-CP, hành vi thu tiền điện của người thuê trọ cao hơn giá quy định của nhà nước có thể bị phạt tiền từ <strong>20.000.000 đ đến 30.000.000 đ</strong>.
                 </p>
                 <div className="pt-2 flex flex-wrap gap-4 text-xs font-semibold">
                   <span>Tiền luật định: <strong>{Number(invoice.total_statutory_amount).toLocaleString('vi-VN')} đ</strong></span>
                   <span>Tiền thực thu: <strong>{Number(invoice.actual_collected_amount).toLocaleString('vi-VN')} đ</strong></span>
-                  <span>Chênh lệch: <strong className="text-overcharge-600">+{Number(invoice.diff_amount).toLocaleString('vi-VN')} đ</strong></span>
+                  <span>Chênh lệch thu lố: <strong className="text-red-600">+{Number(invoice.diff_amount).toLocaleString('vi-VN')} đ</strong></span>
                 </div>
               </div>
             ) : (
@@ -216,7 +263,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
                 <div className="text-xs sm:text-sm">
                   <p className="font-bold">Hóa đơn hợp lệ theo quy định nhà nước</p>
                   <p className="text-emerald-700 mt-0.5">
-                    Chủ trọ đã tính cước đúng theo biểu giá bậc thang sinh hoạt, không phát hiện thu lố hay phụ thu trái luật.
+                    Khoản thu tiền điện nước tuân thủ đúng khung biểu giá bậc thang sinh hoạt, không phát hiện thu lố hay vi phạm định mức.
                   </p>
                 </div>
               </div>
@@ -224,6 +271,44 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
           </div>
 
           <div className="p-6 sm:p-8 space-y-8">
+            {/* METER READINGS SECTION */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
+                <span>Chỉ số công tơ điện nước</span>
+              </h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                {/* Điện */}
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-1.5">
+                  <div className="flex items-center justify-between font-semibold text-slate-700">
+                    <span className="flex items-center gap-1.5 text-amber-700 font-bold">
+                      <Zap className="w-3.5 h-3.5 fill-current" />
+                      Công tơ điện
+                    </span>
+                    <span className="font-mono font-black text-slate-900">{invoice.elec_kwh} kWh</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-600 text-xs pt-1.5 border-t border-slate-100">
+                    <span>Chỉ số đầu: <strong className="font-mono text-slate-800">{meterReading.elec_start ?? '—'}</strong></span>
+                    <span>Chỉ số cuối: <strong className="font-mono text-slate-800">{meterReading.elec_end ?? '—'}</strong></span>
+                  </div>
+                </div>
+
+                {/* Nước */}
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 space-y-1.5">
+                  <div className="flex items-center justify-between font-semibold text-slate-700">
+                    <span className="flex items-center gap-1.5 text-blue-700 font-bold">
+                      <Droplets className="w-3.5 h-3.5 fill-current" />
+                      Công tơ nước
+                    </span>
+                    <span className="font-mono font-black text-slate-900">{invoice.water_usage} m³</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-600 text-xs pt-1.5 border-t border-slate-100">
+                    <span>Chỉ số đầu: <strong className="font-mono text-slate-800">{meterReading.water_start ?? '—'}</strong></span>
+                    <span>Cuối kỳ: <strong className="font-mono text-slate-800">{meterReading.water_end ?? '—'}</strong></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* ELECTRICITY SECTION */}
             <div className="space-y-4">
               <div className="flex items-center justify-between pb-2 border-b border-slate-200">
@@ -234,12 +319,8 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
                   <div>
                     <h3 className="text-base font-black text-slate-900">Chi tiết Tiền Điện</h3>
                     <p className="text-xs text-slate-500">
-                      Phương pháp:{' '}
-                      <strong>
-                        {elecBreakdown.method === 'TIER3'
-                          ? 'Đồng giá bậc 3 (2.380 đ/kWh theo TT 60/2025/TT-BCT)'
-                          : 'Bậc thang 6 bậc (Quyết định 1279/QĐ-BCT)'}
-                      </strong>
+                      Định mức: <strong>{elecBreakdown.quota || 1} hộ</strong> • Phương pháp:{' '}
+                      <strong>{elecBreakdown.method === 'TIER3' ? 'Đồng giá Bậc 3' : 'Bậc thang 6 bậc (QĐ 1279)'}</strong>
                     </p>
                   </div>
                 </div>
@@ -250,32 +331,32 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
                 </div>
               </div>
 
-              {/* Tiers Breakdown Table if TIERED */}
+              {/* Progressive Tiers Table */}
               {elecBreakdown.tiers && elecBreakdown.tiers.length > 0 && (
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
-                  <table className="w-full text-xs text-left">
-                    <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
-                      <tr>
-                        <th className="py-2.5 px-3">Bậc</th>
-                        <th className="py-2.5 px-3">Hạn mức áp dụng</th>
-                        <th className="py-2.5 px-3">Sản lượng (kWh)</th>
-                        <th className="py-2.5 px-3 text-right">Đơn giá (đ/kWh)</th>
-                        <th className="py-2.5 px-3 text-right">Thành tiền (đ)</th>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400 font-semibold uppercase text-[10px] tracking-wider">
+                        <th className="py-2 px-2">Bậc</th>
+                        <th className="py-2 px-2">Khung kWh</th>
+                        <th className="py-2 px-2">Sản lượng</th>
+                        <th className="py-2 px-2">Đơn giá (đ/kWh)</th>
+                        <th className="py-2 px-2 text-right">Thành tiền</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {elecBreakdown.tiers.map((t) => (
-                        <tr key={t.tier_number} className="hover:bg-slate-50/50">
-                          <td className="py-2 px-3 font-bold text-slate-800">Bậc {t.tier_number}</td>
-                          <td className="py-2 px-3 text-slate-600">
-                            {t.threshold_applied != null ? `${t.threshold_applied} kWh` : 'Trở lên'}
+                      {elecBreakdown.tiers.map((tier) => (
+                        <tr key={tier.tier_number} className="hover:bg-slate-50">
+                          <td className="py-2 px-2 font-bold text-slate-800">Bậc {tier.tier_number}</td>
+                          <td className="py-2 px-2 text-slate-600">
+                            {tier.threshold_applied ? `Tối đa ${tier.threshold_applied} kWh` : 'Còn lại'}
                           </td>
-                          <td className="py-2 px-3 font-mono font-bold text-slate-900">{t.kwh_used}</td>
-                          <td className="py-2 px-3 text-right font-mono text-slate-700">
-                            {Number(t.unit_price).toLocaleString('vi-VN')}
+                          <td className="py-2 px-2 font-bold text-slate-900">{tier.kwh_used} kWh</td>
+                          <td className="py-2 px-2 text-slate-600">
+                            {Number(tier.unit_price).toLocaleString('vi-VN')} đ
                           </td>
-                          <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                            {Number(t.amount).toLocaleString('vi-VN')}
+                          <td className="py-2 px-2 font-bold text-slate-900 text-right">
+                            {Number(tier.amount).toLocaleString('vi-VN')} đ
                           </td>
                         </tr>
                       ))}
@@ -285,15 +366,9 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
               )}
 
               {/* Electricity Summary Footer */}
-              <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
                 <div>
-                  <span className="text-amber-800">Tiền trước thuế: </span>
-                  <strong className="text-slate-900">
-                    {Number(elecBreakdown.pre_tax_amount || 0).toLocaleString('vi-VN')} đ
-                  </strong>
-                </div>
-                <div>
-                  <span className="text-amber-800">Thuế VAT (8% theo NQ 204/2025/QH15): </span>
+                  <span className="text-amber-800">Thuế GTGT (8%): </span>
                   <strong className="text-slate-900">
                     {Number(elecBreakdown.vat_amount || 0).toLocaleString('vi-VN')} đ
                   </strong>
@@ -374,6 +449,29 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
                   </p>
                 </div>
               )}
+            </div>
+
+            {/* Financial Signature Block (Visible on print & on screen) */}
+            <div className="pt-8 border-t border-slate-200 grid grid-cols-2 gap-8 text-center text-xs">
+              <div className="space-y-16">
+                <div>
+                  <p className="font-bold text-slate-900 uppercase">Người lập hóa đơn</p>
+                  <p className="text-[11px] text-slate-500 italic">(Ký và ghi rõ họ tên)</p>
+                </div>
+                <p className="text-slate-400 italic">....................................................</p>
+              </div>
+
+              <div className="space-y-16">
+                <div>
+                  <p className="font-bold text-slate-900 uppercase">Người thuê xác nhận</p>
+                  <p className="text-[11px] text-slate-500 italic">(Ký và ghi rõ họ tên)</p>
+                </div>
+                <p className="text-slate-400 italic">....................................................</p>
+              </div>
+            </div>
+
+            <div className="text-center text-[11px] text-slate-400 pt-4 border-t border-slate-100">
+              tro. — Hệ thống Quản lý Lưu trú & Đối chiếu Chi phí Điện Nước Minh bạch • Giấy phép MIT
             </div>
           </div>
         </div>

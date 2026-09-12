@@ -62,6 +62,10 @@ class Property(SQLModel, table=True):
     name: str
     address: Optional[str] = Field(default=None)
     landlord_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    tariff_type: str = Field(default="statutory")  # "statutory" or "custom"
+    custom_elec_rate: Optional[float] = Field(default=None)
+    custom_water_rate: Optional[float] = Field(default=None)
+    custom_water_type: Optional[str] = Field(default="PER_M3")
 
 
 class Room(SQLModel, table=True):
@@ -214,6 +218,13 @@ class MeterReading(SQLModel, table=True):
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+def generate_short_invoice_code(length: int = 4) -> str:
+    """Generate a short, memorable invoice code like HD-89B2 or HD-7K2M."""
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    suffix = "".join(secrets.choice(alphabet) for _ in range(length))
+    return f"HD-{suffix}"
+
+
 class Invoice(SQLModel, table=True):
     """Monthly room invoice entity with statutory calculation and dispute comparison."""
     __tablename__ = "invoice"
@@ -229,8 +240,18 @@ class Invoice(SQLModel, table=True):
     actual_collected_amount: float = Field(default=0.0)
     diff_amount: float = Field(default=0.0)
     share_token: str = Field(default_factory=lambda: str(uuid.uuid4()), unique=True, index=True)
+    short_code: str = Field(default_factory=lambda: generate_short_invoice_code(4), unique=True, index=True)
+    status: str = Field(default="draft")  # "draft" or "published"
+    published_at: Optional[datetime] = Field(default=None)
     breakdown_json: Optional[str] = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+    def __init__(self, **data: Any):
+        if not data.get("short_code"):
+            data["short_code"] = generate_short_invoice_code(4)
+        if not data.get("status"):
+            data["status"] = "draft"
+        super().__init__(**data)
 
     def get_breakdown(self) -> Optional[Dict[str, Any]]:
         """Parse breakdown_json into Python dictionary."""

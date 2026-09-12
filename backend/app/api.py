@@ -5,22 +5,27 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
+from urllib.parse import unquote
 
-from .auth import get_current_user, require_landlord
+from .auth import get_current_user, require_landlord, require_tenant
 from .compat import APIRouter, Depends, HTTPException, Session, select, status
 from .database import get_session
 from .models import Invoice, MeterReading, Property, Room, SystemConfig, User
 from .schemas import (
+    AssignTenantRequest,
     InvoiceCalculateRequest,
     InvoiceOut,
     MeterReadingCreate,
     MeterReadingOut,
     PropertyCreate,
     PropertyOut,
+    PropertyUpdate,
     RoomCreate,
+    RoomJoinRequest,
     RoomOut,
     SystemConfigOut,
     SystemConfigUpdate,
+    TenantRoomOut,
 )
 from core.calculator import (
     calculate_consumption,
@@ -110,6 +115,49 @@ def _verify_room_read_access(
     return room, prop
 
 
+def _enrich_room_out(room: Room, session: Session) -> RoomOut:
+    """Enrich Room entity with tenant and property/landlord metadata for output."""
+    tenant_name: Optional[str] = None
+    tenant_phone: Optional[str] = None
+    if room.tenant_id is not None:
+        tenant = session.get(User, room.tenant_id)
+        if tenant:
+            tenant_name = tenant.full_name or tenant.username
+            tenant_phone = tenant.phone
+
+    prop_name: Optional[str] = None
+    prop_address: Optional[str] = None
+    landlord_name: Optional[str] = None
+    landlord_phone: Optional[str] = None
+
+    if room.property_id is not None:
+        prop = session.get(Property, room.property_id)
+        if prop:
+            prop_name = prop.name
+            prop_address = prop.address
+            if prop.landlord_id is not None:
+                landlord = session.get(User, prop.landlord_id)
+                if landlord:
+                    landlord_name = landlord.full_name or landlord.username
+                    landlord_phone = landlord.phone
+
+    return RoomOut(
+        id=room.id,
+        room_number=room.room_number,
+        property_id=room.property_id,
+        invite_code=room.invite_code,
+        status=room.status,
+        current_people_count=room.current_people_count,
+        tenant_id=room.tenant_id,
+        tenant_name=tenant_name,
+        tenant_phone=tenant_phone,
+        property_name=prop_name,
+        property_address=prop_address,
+        landlord_name=landlord_name,
+        landlord_phone=landlord_phone,
+    )
+
+
 # ============================================================================
 # Properties (Khu trọ) Endpoints
 # ============================================================================
@@ -132,6 +180,10 @@ def create_property(
         name=cleaned_name,
         address=property_data.address.strip() if property_data.address else None,
         landlord_id=current_user.id,
+        tariff_type=property_data.tariff_type or "statutory",
+        custom_elec_rate=property_data.custom_elec_rate,
+        custom_water_rate=property_data.custom_water_rate,
+        custom_water_type=property_data.custom_water_type or "PER_M3",
     )
     session.add(prop)
     session.commit()
@@ -168,6 +220,50 @@ def get_property(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You are not authorized to view this property",
         )
+    return PropertyOut.model_validate(prop)
+
+
+@router.put("/properties/{id}", response_model=PropertyOut)
+def update_property(
+    id: int,
+    property_data: PropertyUpdate,
+    current_user: User = Depends(require_landlord),
+    session: Session = Depends(get_session),
+) -> PropertyOut:
+    """Update details and tariff configuration of a specific property owned by the landlord."""
+    prop = session.get(Property, id)
+    if not prop:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Property with id {id} not found",
+        )
+    if prop.landlord_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You are not authorized to edit this property",
+        )
+    if property_data.name is not None:
+        cleaned_name = property_data.name.strip()
+        if not cleaned_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Property name cannot be empty or whitespace",
+            )
+        prop.name = cleaned_name
+    if property_data.address is not None:
+        prop.address = property_data.address.strip() if property_data.address else None
+    if property_data.tariff_type is not None:
+        prop.tariff_type = property_data.tariff_type
+    if property_data.custom_elec_rate is not None:
+        prop.custom_elec_rate = property_data.custom_elec_rate
+    if property_data.custom_water_rate is not None:
+        prop.custom_water_rate = property_data.custom_water_rate
+    if property_data.custom_water_type is not None:
+        prop.custom_water_type = property_data.custom_water_type
+
+    session.add(prop)
+    session.commit()
+    session.refresh(prop)
     return PropertyOut.model_validate(prop)
 
 
@@ -234,7 +330,7 @@ def create_room(
     session.add(room)
     session.commit()
     session.refresh(room)
-    return RoomOut.model_validate(room)
+    return _enrich_room_out(room, session)
 
 
 @router.get("/properties/{property_id}/rooms", response_model=List[RoomOut])
@@ -259,7 +355,19 @@ def list_rooms_in_property(
     rooms = session.exec(
         select(Room).where(Room.property_id == property_id).order_by(Room.room_number.asc())
     ).all()
-    return [RoomOut.model_validate(r) for r in rooms]
+    return [_enrich_room_out(r, session) for r in rooms]
+
+
+@router.get("/tenant/rooms", response_model=List[RoomOut])
+@router.get("/rooms/my", response_model=List[RoomOut])
+def get_tenant_rooms(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> List[RoomOut]:
+    """Retrieve all rooms currently assigned to the authenticated user."""
+    statement = select(Room).where(Room.tenant_id == current_user.id).order_by(Room.id.asc())
+    rooms = session.exec(statement).all()
+    return [_enrich_room_out(r, session) for r in rooms]
 
 
 @router.get("/rooms/{id}", response_model=RoomOut)
@@ -270,7 +378,148 @@ def get_room(
 ) -> RoomOut:
     """Retrieve details for a specific room (accessible by landlord or assigned tenant)."""
     room, _ = _verify_room_read_access(id, current_user, session)
-    return RoomOut.model_validate(room)
+    return _enrich_room_out(room, session)
+
+
+@router.post(
+    "/properties/{property_id}/rooms/{room_id}/assign-tenant",
+    response_model=RoomOut,
+)
+@router.post(
+    "/rooms/{room_id}/assign-tenant",
+    response_model=RoomOut,
+)
+def assign_tenant_to_room(
+    room_id: int,
+    property_id: Optional[int] = None,
+    assign_data: Optional[AssignTenantRequest] = None,
+    current_user: User = Depends(require_landlord),
+    session: Session = Depends(get_session),
+) -> RoomOut:
+    """Assign a tenant directly to a room via username or phone number (Landlord only)."""
+    room, prop = _verify_room_landlord_access(room_id, current_user, session)
+    if property_id is not None:
+        try:
+            pid = int(property_id)
+        except (ValueError, TypeError):
+            pid = property_id
+        if room.property_id != pid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Room {room_id} does not belong to property {property_id}",
+            )
+
+    if not assign_data or (not assign_data.username and not assign_data.phone):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either username or phone must be provided to assign tenant",
+        )
+
+    tenant: Optional[User] = None
+    if assign_data.username:
+        clean_user = assign_data.username.strip().lstrip("@")
+        tenant = session.exec(
+            select(User).where(User.username == clean_user)
+        ).first()
+        if not tenant:
+            tenant = session.exec(
+                select(User).where(User.phone == clean_user)
+            ).first()
+    elif assign_data.phone:
+        clean_phone = assign_data.phone.strip()
+        tenant = session.exec(
+            select(User).where(User.phone == clean_phone)
+        ).first()
+        if not tenant:
+            tenant = session.exec(
+                select(User).where(User.username == clean_phone)
+            ).first()
+
+    if not tenant:
+        identifier = assign_data.username or assign_data.phone
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Tenant account '{identifier}' not found",
+        )
+
+    if tenant.role != "tenant":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"User '{tenant.username}' does not have tenant role (role is '{tenant.role}')",
+        )
+
+    room.assign_tenant(tenant.id)
+    session.add(room)
+    session.commit()
+    session.refresh(room)
+
+    return _enrich_room_out(room, session)
+
+
+@router.post(
+    "/properties/{property_id}/rooms/{room_id}/remove-tenant",
+    response_model=RoomOut,
+)
+@router.post(
+    "/rooms/{room_id}/remove-tenant",
+    response_model=RoomOut,
+)
+def remove_tenant_from_room(
+    room_id: int,
+    property_id: Optional[int] = None,
+    current_user: User = Depends(require_landlord),
+    session: Session = Depends(get_session),
+) -> RoomOut:
+    """Landlord removes a tenant from a room, resets status to 'empty', and regenerates invite code."""
+    room, prop = _verify_room_landlord_access(room_id, current_user, session)
+    if property_id is not None:
+        try:
+            pid = int(property_id)
+        except (ValueError, TypeError):
+            pid = property_id
+        if room.property_id != pid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Room {room_id} does not belong to property {property_id}",
+            )
+
+    room.remove_tenant()
+    session.add(room)
+    session.commit()
+    session.refresh(room)
+    return _enrich_room_out(room, session)
+
+
+@router.post("/rooms/join", response_model=RoomOut)
+def join_room(
+    join_data: RoomJoinRequest,
+    current_user: User = Depends(require_tenant),
+    session: Session = Depends(get_session),
+) -> RoomOut:
+    """Associate authenticated tenant with a room using its invite code."""
+    cleaned_code = join_data.invite_code.strip().upper()
+    room = session.exec(select(Room).where(Room.invite_code == cleaned_code)).first()
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Invalid invite code: '{cleaned_code}'. Room not found.",
+        )
+
+    if room.tenant_id == current_user.id:
+        return _enrich_room_out(room, session)
+
+    if room.tenant_id is not None or room.status == "active":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Room with invite code '{cleaned_code}' is already occupied.",
+        )
+
+    room.assign_tenant(current_user.id)
+    session.add(room)
+    session.commit()
+    session.refresh(room)
+
+    return _enrich_room_out(room, session)
 
 
 # ============================================================================
@@ -488,11 +737,23 @@ def calculate_and_generate_invoice(
 
         # 6. Statutory total & dispute calculation
         total_statutory = elec_result.total_amount + water_result.total_amount
-        actual_collected = (
+        user_actual = (
             calc_data.actual_collected
             if calc_data.actual_collected is not None
-            else (calc_data.actual_collected_amount if calc_data.actual_collected_amount is not None else 0.0)
+            else calc_data.actual_collected_amount
         )
+        if user_actual is not None:
+            actual_collected = Decimal(str(user_actual))
+        elif prop and getattr(prop, "tariff_type", None) == "custom" and getattr(prop, "custom_elec_rate", None) is not None:
+            c_elec = Decimal(str(elec_result.consumption_kwh)) * Decimal(str(prop.custom_elec_rate))
+            if getattr(prop, "custom_water_type", "PER_M3") == "PER_PERSON":
+                c_water = Decimal(str(people_count)) * Decimal(str(prop.custom_water_rate or 0.0))
+            else:
+                c_water = Decimal(str(water_result.usage)) * Decimal(str(prop.custom_water_rate or 0.0))
+            actual_collected = c_elec + c_water
+        else:
+            actual_collected = total_statutory
+
         dispute_result = calculate_dispute(
             calculated_total=total_statutory,
             actual_collected=actual_collected,
@@ -503,13 +764,25 @@ def calculate_and_generate_invoice(
             detail=f"Invalid calculation parameter: {str(exc)}",
         )
 
-    # 7. Construct detailed breakdown json enriched with room and property information
+    # 7. Construct detailed breakdown json enriched with room, meter readings, and property information
     breakdown_data: Dict[str, Any] = {
         "room_id": room.id,
         "room_number": room.room_number,
         "property_id": room.property_id,
         "property_name": prop.name if prop else None,
         "property_address": prop.address if prop else None,
+        "property_tariff": {
+            "tariff_type": getattr(prop, "tariff_type", "statutory") if prop else "statutory",
+            "custom_elec_rate": getattr(prop, "custom_elec_rate", None) if prop else None,
+            "custom_water_rate": getattr(prop, "custom_water_rate", None) if prop else None,
+            "custom_water_type": getattr(prop, "custom_water_type", "PER_M3") if prop else "PER_M3",
+        },
+        "meter_reading": {
+            "elec_start": float(elec_start) if elec_start is not None else 0.0,
+            "elec_end": float(elec_end) if elec_end is not None else 0.0,
+            "water_start": float(water_start) if water_start is not None else 0.0,
+            "water_end": float(water_end) if water_end is not None else 0.0,
+        },
         "electricity": {
             "method": elec_result.method,
             "consumption_kwh": float(elec_result.consumption_kwh),
@@ -555,6 +828,7 @@ def calculate_and_generate_invoice(
         total_statutory_amount=float(total_statutory),
         actual_collected_amount=float(actual_collected),
         diff_amount=float(dispute_result.diff_amount),
+        status="draft",
     )
     invoice.set_breakdown(breakdown_data)
 
@@ -565,17 +839,46 @@ def calculate_and_generate_invoice(
     return InvoiceOut.model_validate(invoice)
 
 
+@router.post("/invoices/{id}/publish", response_model=InvoiceOut)
+def publish_invoice(
+    id: int,
+    current_user: User = Depends(require_landlord),
+    session: Session = Depends(get_session),
+) -> InvoiceOut:
+    """Publish a draft invoice and notify tenant (Landlord only)."""
+    invoice = session.get(Invoice, id)
+    if not invoice:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Invoice with id {id} not found",
+        )
+    _verify_room_landlord_access(invoice.room_id, current_user, session)
+    invoice.status = "published"
+    invoice.published_at = datetime.now(timezone.utc)
+    session.add(invoice)
+    session.commit()
+    session.refresh(invoice)
+    return InvoiceOut.model_validate(invoice)
+
+
 @router.get("/rooms/{room_id}/invoices", response_model=List[InvoiceOut])
 def list_invoices_for_room(
     room_id: int,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ) -> List[InvoiceOut]:
-    """Retrieve all invoices generated for a specific room ordered by month."""
+    """List all invoices generated for a specific room.
+
+    Landlords can view all invoices (including drafts).
+    Tenants can view all invoices for their assigned room (client filters to published).
+    """
     _verify_room_read_access(room_id, current_user, session)
-    invoices = session.exec(
-        select(Invoice).where(Invoice.room_id == room_id).order_by(Invoice.month_year.desc())
-    ).all()
+    statement = (
+        select(Invoice)
+        .where(Invoice.room_id == room_id)
+        .order_by(Invoice.month_year.desc(), Invoice.id.desc())
+    )
+    invoices = session.exec(statement).all()
     return [InvoiceOut.model_validate(inv) for inv in invoices]
 
 
@@ -607,20 +910,25 @@ def get_public_invoice(
     share_token: str,
     session: Session = Depends(get_session),
 ) -> InvoiceOut:
-    """Public lookup endpoint allowing anyone with share_token to inspect invoice and breakdown without authentication."""
-    cleaned_token = share_token.strip()
+    """Public lookup endpoint allowing anyone with share_token or short_code to inspect invoice and breakdown without authentication."""
+    decoded = unquote(share_token).strip()
+    cleaned_token = decoded.lstrip("#").strip()
     if not cleaned_token:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Invoice with empty share token not found",
         )
     invoice = session.exec(
-        select(Invoice).where(Invoice.share_token == cleaned_token)
+        select(Invoice).where(
+            (Invoice.share_token == cleaned_token)
+            | (Invoice.short_code == cleaned_token.upper())
+            | (Invoice.share_token == cleaned_token.lower())
+        )
     ).first()
     if not invoice:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Invoice with share token '{cleaned_token}' not found",
+            detail=f"Invoice with share token '{share_token}' not found",
         )
     return InvoiceOut.model_validate(invoice)
 
@@ -685,3 +993,60 @@ def update_system_config(
     session.commit()
     session.refresh(config)
     return SystemConfigOut.model_validate(config)
+
+
+# ============================================================================
+# Notifications API
+# ============================================================================
+
+
+@router.get("/notifications")
+def get_notifications(
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> List[Dict[str, Any]]:
+    """Retrieve in-app notifications for the authenticated user."""
+    notifs = []
+    if current_user.is_tenant:
+        my_rooms = session.exec(select(Room).where(Room.tenant_id == current_user.id)).all()
+        for r in my_rooms:
+            invs = session.exec(
+                select(Invoice)
+                .where(Invoice.room_id == r.id, Invoice.status == "published")
+                .order_by(Invoice.created_at.desc())
+            ).all()
+            for inv in invs[:5]:
+                notifs.append({
+                    "id": f"inv_{inv.id}",
+                    "title": f"Hóa đơn điện nước tháng {inv.month_year}",
+                    "message": f"Phòng {r.room_number}: Tổng tiền {int(inv.total_statutory_amount):,} đ. Mã tra cứu: {inv.short_code or inv.id}",
+                    "timestamp": (inv.published_at or inv.created_at).isoformat() if (inv.published_at or inv.created_at) else None,
+                    "share_token": inv.share_token,
+                    "short_code": inv.short_code,
+                    "invoice_id": inv.id,
+                    "read": False,
+                })
+    elif current_user.is_landlord:
+        props = session.exec(select(Property).where(Property.landlord_id == current_user.id)).all()
+        prop_ids = [p.id for p in props if p.id is not None]
+        if prop_ids:
+            rooms = session.exec(select(Room).where(Room.property_id.in_(prop_ids))).all()
+            room_ids = [r.id for r in rooms if r.id is not None]
+            if room_ids:
+                invs = session.exec(
+                    select(Invoice)
+                    .where(Invoice.room_id.in_(room_ids))
+                    .order_by(Invoice.created_at.desc())
+                ).all()
+                for inv in invs[:5]:
+                    notifs.append({
+                        "id": f"inv_{inv.id}",
+                        "title": f"Hóa đơn tháng {inv.month_year} ({'Đã phát hành' if inv.status == 'published' else 'Bản nháp'})",
+                        "message": f"Hóa đơn {inv.short_code or inv.id}: {int(inv.total_statutory_amount):,} đ ({inv.status})",
+                        "timestamp": (inv.published_at or inv.created_at).isoformat() if (inv.published_at or inv.created_at) else None,
+                        "share_token": inv.share_token,
+                        "short_code": inv.short_code,
+                        "invoice_id": inv.id,
+                        "read": False,
+                    })
+    return notifs
