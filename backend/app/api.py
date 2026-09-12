@@ -16,7 +16,12 @@ from .auth import (
     require_tenant,
 )
 from .compat import APIRouter, Depends, HTTPException, Session, select, status
-from .database import get_session, hash_admin_secret
+from .database import (
+    decrypt_admin_secret,
+    encrypt_admin_secret,
+    get_session,
+    hash_admin_secret,
+)
 from .models import (
     AdminApprovalRequest,
     AdminSecretKey,
@@ -43,6 +48,7 @@ from .schemas import (
     RoomCreate,
     RoomJoinRequest,
     RoomOut,
+    SecretRevealIn,
     SecretRotateIn,
     SystemConfigOut,
     SystemConfigUpdate,
@@ -52,6 +58,7 @@ from .schemas import (
     TariffUpdateIn,
     TenantRoomOut,
 )
+from .security import verify_password
 from .tariff_history import get_tariff_by_version
 from core.calculator import (
     calculate_consumption,
@@ -1365,7 +1372,13 @@ def rotate_admin_secret(
     current_user: User = Depends(require_root_admin),
     session: Session = Depends(get_session),
 ) -> Dict[str, Any]:
-    """Rotate the admin registration secret key and invalidate prior pending requests (Root Admin only)."""
+    """Rotate the admin registration secret key after verifying Root Admin password (Root Admin only)."""
+    if not verify_password(payload.admin_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu quản trị viên không chính xác",
+        )
+
     cleaned_secret = payload.new_secret.strip()
     if len(cleaned_secret) < 8:
         raise HTTPException(
@@ -1386,6 +1399,7 @@ def rotate_admin_secret(
     # Create new active key
     new_key = AdminSecretKey(
         hashed_secret=hash_admin_secret(cleaned_secret),
+        encrypted_secret=encrypt_admin_secret(cleaned_secret),
         created_by_id=current_user.id,
         is_active=True,
         created_at=now_utc,
@@ -1408,6 +1422,37 @@ def rotate_admin_secret(
     return {
         "message": "Khóa bí mật đã được xoay vòng thành công",
         "key_id": new_key.id,
+    }
+
+
+@router.post("/admin/secret/reveal")
+def reveal_admin_secret(
+    payload: SecretRevealIn,
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
+    """Authenticate Root Admin with their password and reveal the active secret key (Root Admin only)."""
+    if not verify_password(payload.admin_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu quản trị viên không chính xác",
+        )
+    active_key = session.exec(
+        select(AdminSecretKey).where(AdminSecretKey.is_active == True)
+    ).first()
+    if not active_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy khóa bí mật đang hoạt động",
+        )
+    revealed = ""
+    if active_key.encrypted_secret:
+        revealed = decrypt_admin_secret(active_key.encrypted_secret)
+    else:
+        revealed = "OHTLP_TRO.2026"
+    return {
+        "active_secret_key": revealed,
+        "created_at": active_key.created_at,
     }
 
 

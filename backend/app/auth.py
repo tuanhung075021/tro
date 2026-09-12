@@ -19,7 +19,7 @@ from .compat import (
 )
 from .database import get_session, hash_admin_secret
 from .models import AdminApprovalRequest, AdminSecretKey, Property, Room, User
-from .schemas import RoomOut, TokenResponse, UserLogin, UserOut, UserRegister
+from .schemas import ChangePasswordIn, RoomOut, TokenResponse, UserLogin, UserOut, UserRegister
 from .security import (
     create_access_token,
     decode_access_token,
@@ -366,6 +366,39 @@ def get_me(
 ) -> UserOut:
     """Return profile details for the currently authenticated user."""
     return UserOut.model_validate(current_user)
+
+
+@router.post("/change-password")
+def change_password(
+    pwd_data: ChangePasswordIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Allow any authenticated user to change their password by validating their current password."""
+    if not verify_password(pwd_data.current_password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu hiện tại không chính xác",
+        )
+    if pwd_data.new_password != pwd_data.confirm_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu xác nhận không khớp với mật khẩu mới",
+        )
+    if len(pwd_data.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu mới phải có tối thiểu 6 ký tự",
+        )
+    if pwd_data.new_password == pwd_data.current_password:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu mới không được trùng với mật khẩu hiện tại",
+        )
+    current_user.hashed_password = get_password_hash(pwd_data.new_password)
+    session.add(current_user)
+    session.commit()
+    return {"message": "Đổi mật khẩu thành công"}
 
 
 @router.post("/rooms/{room_id}/remove-tenant", response_model=RoomOut)

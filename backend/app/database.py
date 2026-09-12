@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Database engine, session management, and initialization for tro. backend."""
 
+import base64
 import hashlib
 import os
 from typing import Any, Generator, Optional
@@ -25,6 +26,36 @@ def hash_admin_secret(secret: str) -> str:
     return hashlib.pbkdf2_hmac(
         'sha256', secret.encode(), b'tro_admin_salt_2026', 100_000
     ).hex()
+
+
+def encrypt_admin_secret(raw_secret: str) -> str:
+    """Reversibly encrypt active secret key so authenticated Root Admin can view it."""
+    try:
+        from cryptography.fernet import Fernet
+        k = base64.urlsafe_b64encode(hashlib.sha256(b"tro_secret_salt_2026").digest())
+        return Fernet(k).encrypt(raw_secret.encode("utf-8")).decode("utf-8")
+    except Exception:
+        # Resilient symmetric XOR fallback
+        key = hashlib.sha256(b"tro_secret_salt_2026").digest()
+        raw_bytes = raw_secret.encode("utf-8")
+        xored = bytes(b ^ key[i % len(key)] for i, b in enumerate(raw_bytes))
+        return "xor:" + base64.b64encode(xored).decode("ascii")
+
+
+def decrypt_admin_secret(enc_secret: str) -> str:
+    """Decrypt encrypted secret key for verified Root Admin."""
+    if not enc_secret:
+        return ""
+    if enc_secret.startswith("xor:"):
+        key = hashlib.sha256(b"tro_secret_salt_2026").digest()
+        xored = base64.b64decode(enc_secret[4:])
+        return bytes(b ^ key[i % len(key)] for i, b in enumerate(xored)).decode("utf-8")
+    try:
+        from cryptography.fernet import Fernet
+        k = base64.urlsafe_b64encode(hashlib.sha256(b"tro_secret_salt_2026").digest())
+        return Fernet(k).decrypt(enc_secret.encode("utf-8")).decode("utf-8")
+    except Exception:
+        return ""
 
 # Database file configuration
 DEFAULT_DB_FILE = "tro.db"
@@ -66,6 +97,10 @@ def init_db(target_engine: Optional[Any] = None) -> None:
                     raw_conn.execute("ALTER TABLE systemconfig ADD COLUMN tariff_updated_at TEXT")
                 except Exception:
                     pass
+                try:
+                    raw_conn.execute("ALTER TABLE adminsecretkey ADD COLUMN encrypted_secret TEXT")
+                except Exception:
+                    pass
                 raw_conn.execute("UPDATE systemconfig SET tariff_version = 'QD-1279-2023' WHERE tariff_version IS NULL")
                 raw_conn.commit()
         except Exception:
@@ -98,7 +133,12 @@ def init_db(target_engine: Optional[Any] = None) -> None:
         if active_key is None:
             seed_key = AdminSecretKey(
                 hashed_secret=hash_admin_secret("OHTLP_TRO.2026"),
+                encrypted_secret=encrypt_admin_secret("OHTLP_TRO.2026"),
                 is_active=True,
             )
             session.add(seed_key)
+            session.commit()
+        elif getattr(active_key, "encrypted_secret", None) is None:
+            active_key.encrypted_secret = encrypt_admin_secret("OHTLP_TRO.2026")
+            session.add(active_key)
             session.commit()

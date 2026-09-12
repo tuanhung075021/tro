@@ -34,6 +34,9 @@ import {
   Calendar,
   Phone,
   User,
+  Lock,
+  Unlock,
+  Copy,
 } from 'lucide-react';
 
 export default function AdminDashboard() {
@@ -78,8 +81,19 @@ export default function AdminDashboard() {
   const [rejectModal, setRejectModal] = useState({ open: false, requestId: null, username: '', reason: '' });
   const [newSecret, setNewSecret] = useState('');
   const [showSecret, setShowSecret] = useState(false);
+  const [rotateAdminPassword, setRotateAdminPassword] = useState('');
+  const [showRotateAdminPassword, setShowRotateAdminPassword] = useState(false);
   const [showRotateConfirm, setShowRotateConfirm] = useState(false);
   const [rotatingSecret, setRotatingSecret] = useState(false);
+
+  // Secret Key Reveal State (Root Admin password authentication)
+  const [activeSecret, setActiveSecret] = useState(null);
+  const [showRevealModal, setShowRevealModal] = useState(false);
+  const [revealPassword, setRevealPassword] = useState('');
+  const [showRevealPassword, setShowRevealPassword] = useState(false);
+  const [revealingSecret, setRevealingSecret] = useState(false);
+  const [revealError, setRevealError] = useState('');
+  const [copiedSecret, setCopiedSecret] = useState(false);
 
   // ============================================================================
   // Load Tariff Data
@@ -286,17 +300,66 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleOpenRevealModal = () => {
+    setRevealPassword('');
+    setShowRevealPassword(false);
+    setRevealError('');
+    setShowRevealModal(true);
+  };
+
+  const handleConfirmReveal = async (e) => {
+    if (e) e.preventDefault();
+    if (!revealPassword) {
+      setRevealError('Vui lòng nhập mật khẩu tài khoản Root Admin');
+      return;
+    }
+    setRevealingSecret(true);
+    setRevealError('');
+    try {
+      const res = await adminApi.revealSecret({ admin_password: revealPassword });
+      setActiveSecret(res.active_secret_key);
+      setShowRevealModal(false);
+      setRevealPassword('');
+      toast.success('Mở khóa xem Secret Key thành công!');
+    } catch (err) {
+      setRevealError(err.message || 'Mật khẩu quản trị viên không chính xác');
+    } finally {
+      setRevealingSecret(false);
+    }
+  };
+
+  const handleCopySecret = async () => {
+    if (!activeSecret) return;
+    try {
+      await navigator.clipboard.writeText(activeSecret);
+      setCopiedSecret(true);
+      toast.success('Đã sao chép Khóa Bí mật vào bộ nhớ tạm!');
+      setTimeout(() => setCopiedSecret(false), 2500);
+    } catch {
+      toast.error('Không thể tự động sao chép, vui lòng copy thủ công');
+    }
+  };
+
   const handleRotateSecret = async () => {
     if (newSecret.trim().length < 8) {
       toast.error('Secret key mới phải có ít nhất 8 ký tự');
       return;
     }
+    if (!rotateAdminPassword) {
+      toast.error('Vui lòng nhập mật khẩu tài khoản Root Admin để xác thực');
+      return;
+    }
     setRotatingSecret(true);
     try {
-      await adminApi.rotateSecret(newSecret.trim());
+      await adminApi.rotateSecret({
+        new_secret: newSecret.trim(),
+        admin_password: rotateAdminPassword,
+      });
       toast.success('Xoay vòng Secret Key thành công!');
       setShowRotateConfirm(false);
       setNewSecret('');
+      setRotateAdminPassword('');
+      setActiveSecret(null);
       fetchAdminData();
     } catch (err) {
       toast.error(err.message || 'Xoay vòng Secret Key thất bại');
@@ -865,6 +928,94 @@ export default function AdminDashboard() {
             </div>
           </div>
 
+          {/* Khối Khóa Bí mật Quản trị Hiện tại (Current Active Secret Key) */}
+          <div className="bg-white rounded-3xl border border-amber-200/90 shadow-sm p-5 sm:p-7 space-y-4">
+            <div className="flex items-center justify-between border-b border-amber-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                  <KeyRound className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900">
+                    Khóa Bí mật Quản trị Hiện tại (Active Secret Key)
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Dùng cho cú pháp kích hoạt Easter Egg Admin: <code className="text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded font-mono font-semibold">username::secret_key</code>
+                  </p>
+                </div>
+              </div>
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                activeSecret
+                  ? 'bg-amber-100 text-amber-800 border-amber-300'
+                  : 'bg-slate-100 text-slate-600 border-slate-200'
+              }`}>
+                {activeSecret ? 'Đang mở khóa' : 'Đã khóa bảo vệ'}
+              </span>
+            </div>
+
+            {activeSecret ? (
+              <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-300 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-amber-900 mb-1 flex items-center gap-1.5">
+                      <Unlock className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Chuỗi Secret Key đang hoạt động:</span>
+                    </div>
+                    <div className="font-mono text-base font-black text-amber-950 bg-white/90 px-3.5 py-2 rounded-xl border border-amber-200 shadow-inner select-all break-all">
+                      {activeSecret}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleCopySecret}
+                      className="min-h-[40px] px-3.5 py-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs rounded-xl inline-flex items-center gap-1.5 shadow-sm transition-all"
+                      title="Sao chép vào bộ nhớ tạm"
+                    >
+                      {copiedSecret ? <Check className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedSecret ? 'Đã sao chép!' : 'Sao chép'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setActiveSecret(null)}
+                      className="min-h-[40px] px-3.5 py-2 bg-slate-200 hover:bg-slate-300 active:scale-95 text-slate-700 font-bold text-xs rounded-xl inline-flex items-center gap-1.5 transition-all"
+                      title="Ẩn khóa bí mật"
+                    >
+                      <EyeOff className="w-4 h-4" />
+                      <span>Ẩn lại</span>
+                    </button>
+                  </div>
+                </div>
+                <p className="text-[11px] text-amber-800 leading-relaxed">
+                  Lưu ý: Không chia sẻ khóa này công khai. Khi muốn tạo tài khoản Admin mới, hãy cung cấp cú pháp trên kèm khóa này cho ứng viên tin cậy.
+                </p>
+              </div>
+            ) : (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="space-y-1">
+                  <div className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Trạng thái bảo vệ:</span>
+                  </div>
+                  <div className="font-mono text-sm tracking-widest text-slate-400 font-bold">
+                    ••••••••••••••••••••
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Khóa được mã hóa bằng thuật toán đối xứng an toàn. Cần xác thực mật khẩu Root Admin để giải mã xem nội dung.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenRevealModal}
+                  className="min-h-[44px] px-4 py-2 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl inline-flex items-center justify-center gap-2 shadow-sm transition-all flex-shrink-0"
+                >
+                  <Lock className="w-4 h-4 text-amber-400" />
+                  <span>Mở khóa xem Key</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Khối Xoay vòng Secret Key (Secret Key Rotation) */}
           <div className="bg-white rounded-3xl border border-red-200/90 shadow-sm p-5 sm:p-7 space-y-4">
             <div className="flex items-center gap-2.5 border-b border-red-100 pb-3">
@@ -894,37 +1045,64 @@ export default function AdminDashboard() {
             </div>
 
             <div className="max-w-md space-y-3 pt-1">
-              <label className="block text-xs font-bold text-slate-700">
-                Nhập Secret Key Mới (Tối thiểu 8 ký tự)
-              </label>
-              <div className="relative">
-                <input
-                  type={showSecret ? 'text' : 'password'}
-                  placeholder="Ví dụ: OHTLP_TRO.2026_V2"
-                  value={newSecret}
-                  onChange={(e) => setNewSecret(e.target.value)}
-                  className="w-full min-h-[44px] px-3.5 pr-10 py-2 text-sm font-mono rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-red-500 focus:ring-2 focus:ring-red-100"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowSecret((p) => !p)}
-                  className="absolute right-2.5 top-2.5 p-1 text-slate-400 hover:text-slate-700"
-                  title={showSecret ? 'Ẩn' : 'Hiện'}
-                >
-                  {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Nhập Secret Key Mới (Tối thiểu 8 ký tự)
+                </label>
+                <div className="relative">
+                  <input
+                    type={showSecret ? 'text' : 'password'}
+                    placeholder="Ví dụ: OHTLP_TRO.2026_V2"
+                    value={newSecret}
+                    onChange={(e) => setNewSecret(e.target.value)}
+                    className="w-full min-h-[44px] px-3.5 pr-10 py-2 text-sm font-mono rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSecret((p) => !p)}
+                    className="absolute right-2.5 top-2.5 p-1 text-slate-400 hover:text-slate-700"
+                    title={showSecret ? 'Ẩn' : 'Hiện'}
+                  >
+                    {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {newSecret.length > 0 && newSecret.length < 8 && (
+                  <p className="text-[11px] text-red-600 font-semibold flex items-center gap-1 mt-1">
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    <span>Khóa bí mật phải có độ dài tối thiểu 8 ký tự</span>
+                  </p>
+                )}
               </div>
 
-              {newSecret.length > 0 && newSecret.length < 8 && (
-                <p className="text-[11px] text-red-600 font-semibold flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  <span>Khóa bí mật phải có độ dài tối thiểu 8 ký tự</span>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Mật khẩu tài khoản Root Admin của bạn (@{user?.username})
+                </label>
+                <div className="relative">
+                  <input
+                    type={showRotateAdminPassword ? 'text' : 'password'}
+                    placeholder="Nhập mật khẩu để xác thực xoay key..."
+                    value={rotateAdminPassword}
+                    onChange={(e) => setRotateAdminPassword(e.target.value)}
+                    className="w-full min-h-[44px] px-3.5 pr-10 py-2 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-red-500 focus:ring-2 focus:ring-red-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRotateAdminPassword((p) => !p)}
+                    className="absolute right-2.5 top-2.5 p-1 text-slate-400 hover:text-slate-700"
+                    title={showRotateAdminPassword ? 'Ẩn' : 'Hiện'}
+                  >
+                    {showRotateAdminPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Yêu cầu mật khẩu của chính bạn để đảm bảo không bị thao tác ngoài ý muốn.
                 </p>
-              )}
+              </div>
 
               <button
                 type="button"
-                disabled={newSecret.trim().length < 8}
+                disabled={newSecret.trim().length < 8 || !rotateAdminPassword}
                 onClick={() => setShowRotateConfirm(true)}
                 className="min-h-[44px] w-full inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white font-bold text-xs sm:text-sm rounded-xl shadow-md shadow-red-500/20 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -932,6 +1110,85 @@ export default function AdminDashboard() {
                 <span>Thực hiện xoay vòng Key</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* MODAL: Xác thực Root Admin để xem Secret Key                        */}
+      {/* ==================================================================== */}
+      {showRevealModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 shadow-2xl border border-slate-200 animate-scaleIn">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+              <Lock className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1">
+              <h3 className="text-base sm:text-lg font-black text-slate-900">
+                Xác thực danh tính Root Admin
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Vui lòng nhập mật khẩu tài khoản Root Admin của bạn để giải mã và hiển thị Khóa Bí mật Quản trị hiện tại.
+              </p>
+            </div>
+
+            <form onSubmit={handleConfirmReveal} className="space-y-4">
+              <div className="space-y-1.5 text-left">
+                <label className="block text-xs font-semibold text-slate-700">
+                  Mật khẩu tài khoản (@{user?.username})
+                </label>
+                <div className="relative">
+                  <input
+                    type={showRevealPassword ? 'text' : 'password'}
+                    placeholder="Nhập mật khẩu đăng nhập..."
+                    value={revealPassword}
+                    onChange={(e) => {
+                      setRevealPassword(e.target.value);
+                      if (revealError) setRevealError('');
+                    }}
+                    autoFocus
+                    required
+                    className="w-full min-h-[44px] px-3.5 pr-10 py-2 text-sm rounded-xl border border-slate-300 bg-white text-slate-900 focus:border-amber-500 focus:ring-2 focus:ring-amber-100"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowRevealPassword((p) => !p)}
+                    className="absolute right-2.5 top-2.5 p-1 text-slate-400 hover:text-slate-700"
+                    title={showRevealPassword ? 'Ẩn' : 'Hiện'}
+                  >
+                    {showRevealPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {revealError && (
+                  <p className="text-xs text-red-600 font-semibold flex items-center gap-1 mt-1">
+                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                    <span>{revealError}</span>
+                  </p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRevealModal(false);
+                    setRevealPassword('');
+                    setRevealError('');
+                  }}
+                  className="min-h-[44px] flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs sm:text-sm rounded-xl"
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  disabled={revealingSecret || !revealPassword}
+                  className="min-h-[44px] flex-1 px-4 py-2 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold text-xs sm:text-sm rounded-xl shadow-md shadow-amber-500/20 disabled:opacity-50"
+                >
+                  {revealingSecret ? 'Đang giải mã...' : 'Xác nhận mở khóa'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1045,6 +1302,10 @@ export default function AdminDashboard() {
               <p className="text-xs text-red-700 leading-relaxed bg-red-50 p-3 rounded-2xl border border-red-200">
                 Khóa bí mật cũ sẽ hết hiệu lực ngay lập tức. Toàn bộ các yêu cầu chờ xét duyệt admin hiện có sẽ tự động bị hủy bỏ!
               </p>
+              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-200 text-left text-xs space-y-1">
+                <div className="text-slate-500 font-medium">Khóa mới sẽ thiết lập:</div>
+                <div className="font-mono font-bold text-slate-800 break-all select-all">{newSecret}</div>
+              </div>
             </div>
 
             <div className="flex gap-3 pt-2">

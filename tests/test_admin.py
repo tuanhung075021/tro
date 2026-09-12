@@ -536,11 +536,14 @@ class TestAdminSystem(unittest.TestCase):
             ).first()
             self.assertEqual(req.status, "pending")
 
-            # Rotate secret key
+            # Rotate secret key (requires root admin's own password)
             rotate_resp = self.client.post(
                 "/api/v1/admin/secret/rotate",
                 headers=self._auth_headers(root_tok),
-                json={"new_secret": "NEW_SECRET_PASS_2026"},
+                json={
+                    "new_secret": "NEW_SECRET_PASS_2026",
+                    "admin_password": "testPassword123!",
+                },
                 session=session,
             )
             self.assertEqual(rotate_resp.status_code, 200)
@@ -571,6 +574,22 @@ class TestAdminSystem(unittest.TestCase):
             self.assertEqual(new_res.username, "fresh_admin")
             self.assertEqual(new_res.role, "pending_admin")
 
+    def test_rotate_secret_key_wrong_password_fails(self) -> None:
+        """Rotating secret key with incorrect admin password raises HTTP 400."""
+        with Session(self.engine) as session:
+            root_u, root_tok = self._create_user(session, "rot_wrong_pwd", role="root_admin")
+            resp = self.client.post(
+                "/api/v1/admin/secret/rotate",
+                headers=self._auth_headers(root_tok),
+                json={
+                    "new_secret": "VALID_NEW_KEY_2026",
+                    "admin_password": "WrongPassword999!",
+                },
+                session=session,
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.json()["detail"], "Mật khẩu quản trị viên không chính xác")
+
     def test_rotate_secret_key_short_rejected(self) -> None:
         """Secret key < 8 characters is rejected with 400."""
         with Session(self.engine) as session:
@@ -578,10 +597,107 @@ class TestAdminSystem(unittest.TestCase):
             resp = self.client.post(
                 "/api/v1/admin/secret/rotate",
                 headers=self._auth_headers(root_tok),
-                json={"new_secret": "short1"},
+                json={
+                    "new_secret": "short1",
+                    "admin_password": "testPassword123!",
+                },
                 session=session,
             )
             self.assertIn(resp.status_code, (400, 422))
+
+    def test_reveal_secret_key_success(self) -> None:
+        """Root admin entering their own password successfully reveals the active secret key."""
+        with Session(self.engine) as session:
+            root_u, root_tok = self._create_user(session, "reveal_root", role="root_admin")
+            resp = self.client.post(
+                "/api/v1/admin/secret/reveal",
+                headers=self._auth_headers(root_tok),
+                json={"admin_password": "testPassword123!"},
+                session=session,
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["active_secret_key"], "OHTLP_TRO.2026")
+
+    def test_reveal_secret_key_wrong_password_fails(self) -> None:
+        """Root admin entering incorrect password cannot reveal secret key (HTTP 400)."""
+        with Session(self.engine) as session:
+            root_u, root_tok = self._create_user(session, "reveal_fail_root", role="root_admin")
+            resp = self.client.post(
+                "/api/v1/admin/secret/reveal",
+                headers=self._auth_headers(root_tok),
+                json={"admin_password": "incorrectPassword!!!"},
+                session=session,
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.json()["detail"], "Mật khẩu quản trị viên không chính xác")
+
+    def test_change_password_success(self) -> None:
+        """Any authenticated user can change password by confirming their old password."""
+        with Session(self.engine) as session:
+            user, token = self._create_user(session, "pwd_changer", role="tenant")
+            resp = self.client.post(
+                "/api/v1/auth/change-password",
+                headers=self._auth_headers(token),
+                json={
+                    "current_password": "testPassword123!",
+                    "new_password": "newSecurePassword2026!",
+                    "confirm_password": "newSecurePassword2026!",
+                },
+                session=session,
+            )
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp.json()["message"], "Đổi mật khẩu thành công")
+
+    def test_change_password_wrong_current_fails(self) -> None:
+        """Changing password with wrong current password returns HTTP 400."""
+        with Session(self.engine) as session:
+            user, token = self._create_user(session, "pwd_wrong_cur", role="landlord")
+            resp = self.client.post(
+                "/api/v1/auth/change-password",
+                headers=self._auth_headers(token),
+                json={
+                    "current_password": "TotallyWrongPassword!",
+                    "new_password": "brandNewPassword2026!",
+                    "confirm_password": "brandNewPassword2026!",
+                },
+                session=session,
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.json()["detail"], "Mật khẩu hiện tại không chính xác")
+
+    def test_change_password_mismatch_fails(self) -> None:
+        """Changing password with mismatched confirmation returns HTTP 400."""
+        with Session(self.engine) as session:
+            user, token = self._create_user(session, "pwd_mismatch", role="tenant")
+            resp = self.client.post(
+                "/api/v1/auth/change-password",
+                headers=self._auth_headers(token),
+                json={
+                    "current_password": "testPassword123!",
+                    "new_password": "brandNewPassword2026!",
+                    "confirm_password": "differentPassword2026!",
+                },
+                session=session,
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.json()["detail"], "Mật khẩu xác nhận không khớp với mật khẩu mới")
+
+    def test_change_password_same_as_old_fails(self) -> None:
+        """Changing password to identical old password returns HTTP 400."""
+        with Session(self.engine) as session:
+            user, token = self._create_user(session, "pwd_same_old", role="admin")
+            resp = self.client.post(
+                "/api/v1/auth/change-password",
+                headers=self._auth_headers(token),
+                json={
+                    "current_password": "testPassword123!",
+                    "new_password": "testPassword123!",
+                    "confirm_password": "testPassword123!",
+                },
+                session=session,
+            )
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.json()["detail"], "Mật khẩu mới không được trùng với mật khẩu hiện tại")
 
     # ========================================================================
     # 6. Centralized Statutory Tariff Management

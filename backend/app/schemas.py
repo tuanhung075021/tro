@@ -363,12 +363,25 @@ class AdminRejectIn(BaseModel):
 AdminRejectPayload = AdminRejectIn
 
 
+class ChangePasswordIn(BaseModel):
+    """Schema for user changing their own password."""
+    current_password: str = Field(..., min_length=1, description="Mật khẩu hiện tại")
+    new_password: str = Field(..., min_length=6, description="Mật khẩu mới (tối thiểu 6 ký tự)")
+    confirm_password: str = Field(..., min_length=6, description="Xác nhận mật khẩu mới")
+
+
 class SecretRotateIn(BaseModel):
     """Schema for admin secret key rotation."""
-    new_secret: str = Field(..., min_length=8)
+    new_secret: str = Field(..., min_length=8, description="Khóa bí mật mới")
+    admin_password: str = Field(..., min_length=1, description="Mật khẩu xác thực của Root Admin")
 
 
 SecretRotateRequest = SecretRotateIn
+
+
+class SecretRevealIn(BaseModel):
+    """Schema for Root Admin requesting to reveal the active secret key."""
+    admin_password: str = Field(..., min_length=1, description="Mật khẩu xác thực của Root Admin")
 
 
 class TariffTierIn(BaseModel):

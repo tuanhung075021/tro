@@ -138,6 +138,12 @@ export const auth = {
       method: 'GET',
     }),
 
+  changePassword: (data) =>
+    request('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   removeTenant: (roomId) =>
     request(`/auth/rooms/${roomId}/remove-tenant`, {
       method: 'POST',
@@ -354,10 +360,16 @@ export const admin = {
       method: 'POST',
     }),
 
-  rotateSecret: (new_secret) =>
+  rotateSecret: (payload) =>
     request('/admin/secret/rotate', {
       method: 'POST',
-      body: JSON.stringify({ new_secret }),
+      body: JSON.stringify(payload),
+    }),
+
+  revealSecret: (payload) =>
+    request('/admin/secret/reveal', {
+      method: 'POST',
+      body: JSON.stringify(payload),
     }),
 
   getTariff: () =>

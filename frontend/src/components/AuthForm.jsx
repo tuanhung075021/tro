@@ -366,7 +366,7 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                   </div>
                 </div>
 
-                {/* Confirm Password field with Eye toggle */}
+                {/* Confirm Password field with Eye toggle and Realtime Matching Feedback */}
                 <div>
                   <label
                     htmlFor="reg-confirm-password"
@@ -384,7 +384,13 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                       value={registerData.confirmPassword}
                       onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
                       placeholder="Xác nhận lại mật khẩu"
-                      className="w-full min-h-[44px] pl-10 pr-12 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                      className={`w-full min-h-[44px] pl-10 pr-12 py-2.5 rounded-xl text-base sm:text-sm transition-all focus:outline-none focus:ring-2 ${
+                        registerData.confirmPassword.length === 0
+                          ? 'bg-slate-50 border border-slate-200 focus:bg-white focus:ring-primary-500'
+                          : registerData.password === registerData.confirmPassword
+                          ? 'bg-emerald-50/30 border border-emerald-400 focus:bg-white focus:ring-emerald-500 text-slate-900'
+                          : 'bg-red-50/30 border border-red-400 focus:bg-white focus:ring-red-500 text-slate-900'
+                      }`}
                     />
                     <button
                       type="button"
@@ -396,6 +402,19 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {registerData.confirmPassword.length > 0 && (
+                    registerData.password === registerData.confirmPassword ? (
+                      <p className="mt-1 text-[11px] font-semibold text-emerald-600 flex items-center gap-1 animate-fadeIn">
+                        <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>Mật khẩu trùng khớp</span>
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-[11px] font-semibold text-red-600 flex items-center gap-1 animate-fadeIn">
+                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>Mật khẩu nhập lại chưa khớp với mật khẩu đã nhập</span>
+                      </p>
+                    )
+                  )}
                 </div>
 
                 <div>
