@@ -124,8 +124,9 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
         {onClose && (
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 z-20 w-8 h-8 rounded-full bg-black/20 hover:bg-black/30 text-white flex items-center justify-center transition-colors"
+            className="absolute top-3 right-3 z-20 w-11 h-11 min-w-[44px] min-h-[44px] rounded-full bg-black/20 hover:bg-black/30 text-white flex items-center justify-center transition-colors"
             title="Đóng"
+            aria-label="Đóng cửa sổ xác thực"
           >
             <X className="w-5 h-5" />
           </button>
@@ -161,41 +162,52 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
 
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label
+                    htmlFor="login-username"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
+                  >
                     Tên đăng nhập
                   </label>
                   <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      id="login-username"
                       type="text"
                       required
+                      autoComplete="username"
                       value={loginData.username}
                       onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
                       placeholder="Nhập tên tài khoản"
-                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                      className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  <label
+                    htmlFor="login-password"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5"
+                  >
                     Mật khẩu
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      id="login-password"
                       type={showLoginPassword ? 'text' : 'password'}
                       required
+                      autoComplete="current-password"
                       value={loginData.password}
                       onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
                       placeholder="Nhập mật khẩu"
-                      className="w-full pl-10 pr-11 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                      className="w-full min-h-[44px] pl-10 pr-12 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowLoginPassword((prev) => !prev)}
-                      className="absolute right-3 top-3 text-slate-400 hover:text-slate-700 transition-colors p-0.5"
+                      className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center justify-center min-w-[44px] text-slate-400 hover:text-slate-700 transition-colors"
                       title={showLoginPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      aria-label={showLoginPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                     >
                       {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -205,7 +217,7 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full mt-2 py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md shadow-primary-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                  className="w-full mt-2 min-h-[44px] py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md shadow-primary-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
@@ -227,7 +239,7 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                     setTab('register');
                     setFormError(null);
                   }}
-                  className="text-primary-600 hover:text-primary-700 font-bold hover:underline transition-colors"
+                  className="min-h-[44px] inline-flex items-center px-1 text-primary-600 hover:text-primary-700 font-bold hover:underline transition-colors"
                 >
                   Đăng ký
                 </button>
@@ -253,7 +265,7 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                     <button
                       type="button"
                       onClick={() => setRole('landlord')}
-                      className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 transition-all text-xs font-bold ${
+                      className={`min-h-[48px] p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all text-xs font-bold ${
                         role === 'landlord'
                           ? 'border-primary-600 bg-primary-50 text-primary-900 ring-2 ring-primary-500/20 shadow-sm'
                           : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -266,7 +278,7 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                     <button
                       type="button"
                       onClick={() => setRole('tenant')}
-                      className={`p-2.5 rounded-xl border flex flex-col items-center gap-1 transition-all text-xs font-bold ${
+                      className={`min-h-[48px] p-2.5 rounded-xl border flex flex-col items-center justify-center gap-1 transition-all text-xs font-bold ${
                         role === 'tenant'
                           ? 'border-teal-600 bg-teal-50 text-teal-900 ring-2 ring-teal-500/20 shadow-sm'
                           : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
@@ -279,59 +291,75 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  <label
+                    htmlFor="reg-fullname"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1"
+                  >
                     Họ và tên
                   </label>
                   <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      id="reg-fullname"
                       type="text"
                       required
+                      autoComplete="name"
                       value={registerData.full_name}
                       onChange={(e) => setRegisterData({ ...registerData, full_name: e.target.value })}
                       placeholder="Nguyễn Văn A"
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                      className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  <label
+                    htmlFor="reg-username"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1"
+                  >
                     Tên đăng nhập
                   </label>
                   <div className="relative">
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      id="reg-username"
                       type="text"
                       required
+                      autoComplete="username"
                       value={registerData.username}
                       onChange={(e) => setRegisterData({ ...registerData, username: e.target.value })}
                       placeholder="nguyenvana"
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                      className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                     />
                   </div>
                 </div>
 
                 {/* Password field with Eye toggle */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  <label
+                    htmlFor="reg-password"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1"
+                  >
                     Mật khẩu
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      id="reg-password"
                       type={showRegPassword ? 'text' : 'password'}
                       required
+                      autoComplete="new-password"
                       value={registerData.password}
                       onChange={(e) => setRegisterData({ ...registerData, password: e.target.value })}
                       placeholder="Tối thiểu 6 ký tự"
-                      className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                      className="w-full min-h-[44px] pl-10 pr-12 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowRegPassword((prev) => !prev)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-700 transition-colors"
+                      className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center justify-center min-w-[44px] text-slate-400 hover:text-slate-700 transition-colors"
                       title={showRegPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      aria-label={showRegPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                     >
                       {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -340,24 +368,30 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
 
                 {/* Confirm Password field with Eye toggle */}
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  <label
+                    htmlFor="reg-confirm-password"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1"
+                  >
                     Nhập lại mật khẩu
                   </label>
                   <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      id="reg-confirm-password"
                       type={showConfirmPassword ? 'text' : 'password'}
                       required
+                      autoComplete="new-password"
                       value={registerData.confirmPassword}
                       onChange={(e) => setRegisterData({ ...registerData, confirmPassword: e.target.value })}
                       placeholder="Xác nhận lại mật khẩu"
-                      className="w-full pl-10 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                      className="w-full min-h-[44px] pl-10 pr-12 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                     />
                     <button
                       type="button"
                       onClick={() => setShowConfirmPassword((prev) => !prev)}
-                      className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-700 transition-colors"
+                      className="absolute right-0 top-0 bottom-0 px-3.5 flex items-center justify-center min-w-[44px] text-slate-400 hover:text-slate-700 transition-colors"
                       title={showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      aria-label={showConfirmPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                     >
                       {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
@@ -365,17 +399,22 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  <label
+                    htmlFor="reg-phone"
+                    className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1"
+                  >
                     Số điện thoại (tuỳ chọn)
                   </label>
                   <div className="relative">
-                    <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
+                      id="reg-phone"
                       type="tel"
+                      autoComplete="tel"
                       value={registerData.phone}
                       onChange={(e) => setRegisterData({ ...registerData, phone: e.target.value })}
                       placeholder="0912345678"
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+                      className="w-full min-h-[44px] pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-base sm:text-sm focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
                     />
                   </div>
                 </div>
@@ -383,17 +422,21 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                 {/* Invite code for tenant */}
                 {role === 'tenant' && (
                   <div className="p-3 bg-teal-50/70 border border-teal-200 rounded-xl space-y-1">
-                    <label className="block text-xs font-bold text-teal-900 uppercase tracking-wider">
+                    <label
+                      htmlFor="reg-invite-code"
+                      className="block text-xs font-bold text-teal-900 uppercase tracking-wider"
+                    >
                       Mã phòng trọ (Invite code)
                     </label>
                     <div className="relative">
-                      <KeyRound className="w-4 h-4 text-teal-500 absolute left-3 top-2.5" />
+                      <KeyRound className="w-4 h-4 text-teal-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
+                        id="reg-invite-code"
                         type="text"
                         value={registerData.invite_code}
                         onChange={(e) => setRegisterData({ ...registerData, invite_code: e.target.value.toUpperCase() })}
                         placeholder="Mã mời từ chủ trọ (nếu có)"
-                        className="w-full pl-9 pr-4 py-1.5 bg-white border border-teal-200 rounded-lg text-xs uppercase tracking-wider font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className="w-full min-h-[44px] pl-9 pr-4 py-2 bg-white border border-teal-200 rounded-lg text-xs uppercase tracking-wider font-mono focus:outline-none focus:ring-2 focus:ring-teal-500"
                       />
                     </div>
                   </div>
@@ -402,28 +445,30 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                 {/* Pure FOSS Math Captcha to prevent spam bot */}
                 <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl space-y-1.5">
                   <div className="flex items-center justify-between text-xs font-bold text-amber-900">
-                    <span>Xác thực chống Spam Bot (FOSS):</span>
+                    <label htmlFor="reg-captcha">Xác thực chống Spam Bot (FOSS):</label>
                     <button
                       type="button"
                       onClick={generateNewCaptcha}
-                      className="text-amber-700 hover:text-amber-950 flex items-center gap-1 font-semibold text-[11px]"
+                      className="min-h-[44px] px-2 text-amber-700 hover:text-amber-950 flex items-center gap-1 font-semibold text-xs"
                       title="Đổi câu hỏi khác"
+                      aria-label="Đổi phép tính chống spam khác"
                     >
-                      <RefreshCw className="w-3 h-3" />
+                      <RefreshCw className="w-3.5 h-3.5" />
                       <span>Đổi số khác</span>
                     </button>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg font-mono font-bold text-slate-800 text-sm shadow-sm select-none">
+                    <span className="px-3 py-2 bg-white border border-amber-300 rounded-lg font-mono font-bold text-slate-800 text-sm shadow-sm select-none">
                       {captchaNum1} + {captchaNum2} = ?
                     </span>
                     <input
+                      id="reg-captcha"
                       type="number"
                       required
                       value={captchaAnswer}
                       onChange={(e) => setCaptchaAnswer(e.target.value)}
                       placeholder="Nhập kết quả"
-                      className="flex-1 px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      className="flex-1 min-h-[44px] px-3 py-2 bg-white border border-amber-300 rounded-lg text-base sm:text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
                     />
                   </div>
                 </div>
@@ -431,7 +476,7 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="w-full mt-2 py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md shadow-primary-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                  className="w-full mt-2 min-h-[44px] py-3 px-4 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md shadow-primary-500/25 flex items-center justify-center gap-2 transition-all disabled:opacity-70 disabled:cursor-not-allowed"
                 >
                   {submitting ? (
                     <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
@@ -453,7 +498,7 @@ export default function AuthForm({ initialTab = 'login', onAuthSuccess, onClose 
                     setTab('login');
                     setFormError(null);
                   }}
-                  className="text-primary-600 hover:text-primary-700 font-bold hover:underline transition-colors"
+                  className="min-h-[44px] inline-flex items-center px-1 text-primary-600 hover:text-primary-700 font-bold hover:underline transition-colors"
                 >
                   Đăng nhập
                 </button>

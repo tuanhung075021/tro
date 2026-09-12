@@ -39,6 +39,18 @@ def init_db(target_engine: Optional[Any] = None) -> None:
     SQLModel.metadata.create_all(db_engine)
 
     with Session(db_engine) as session:
+        # Self-healing migration for existing databases: fill default values for columns that are NULL
+        try:
+            raw_conn = getattr(session, "conn", None)
+            if raw_conn:
+                raw_conn.execute("UPDATE property SET tariff_type = 'statutory' WHERE tariff_type IS NULL")
+                raw_conn.execute("UPDATE property SET custom_water_type = 'PER_M3' WHERE custom_water_type IS NULL")
+                raw_conn.execute("UPDATE room SET status = 'empty' WHERE status IS NULL")
+                raw_conn.execute("UPDATE room SET current_people_count = 1 WHERE current_people_count IS NULL")
+                raw_conn.commit()
+        except Exception:
+            pass
+
         config = session.get(SystemConfig, 1)
         if config is None:
             statement = select(SystemConfig)

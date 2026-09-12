@@ -83,12 +83,13 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
     <div className="space-y-16 sm:space-y-24 py-4 sm:py-8">
       {/* Hero Section */}
       <section className="text-center max-w-4xl mx-auto space-y-6">
-        <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary-50 text-primary-700 text-xs sm:text-sm font-bold border border-primary-200/80 shadow-sm">
-          <ShieldCheck className="w-4 h-4 text-primary-600" />
-          <span>Hệ thống Quản lý Lưu trú & Đối chiếu Chi phí Điện Nước Minh bạch</span>
+        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-primary-50 text-primary-700 text-xs sm:text-sm font-bold border border-primary-200/80 shadow-sm max-w-full text-center">
+          <ShieldCheck className="w-4 h-4 text-primary-600 flex-shrink-0" />
+          <span className="hidden sm:inline">Hệ thống Quản lý Lưu trú & Đối chiếu Chi phí Điện Nước Minh bạch</span>
+          <span className="sm:hidden">Quản lý điện nước minh bạch</span>
         </div>
 
-        <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-[1.15]">
+        <h1 className="text-2xl sm:text-5xl lg:text-6xl font-black text-slate-900 tracking-tight leading-[1.15]">
           Chuẩn hóa tiền điện nước, <br />
           <span className="text-transparent bg-clip-text bg-gradient-to-r from-primary-600 to-teal-600">
             đối chiếu minh bạch đúng luật định
@@ -100,10 +101,10 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
         </p>
 
         {/* Hero CTA buttons */}
-        <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 pt-2">
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4 pt-2 w-full max-w-md mx-auto sm:max-w-none">
           <button
             onClick={onOpenAuth}
-            className="flex items-center gap-2 px-6 py-3.5 bg-primary-600 hover:bg-primary-700 text-white text-sm sm:text-base font-bold rounded-2xl shadow-lg shadow-primary-500/25 transition-all transform hover:-translate-y-0.5"
+            className="w-full sm:w-auto min-h-[48px] flex items-center justify-center gap-2 px-6 py-3.5 bg-primary-600 hover:bg-primary-700 text-white text-sm sm:text-base font-bold rounded-2xl shadow-lg shadow-primary-500/25 transition-all transform hover:-translate-y-0.5"
           >
             <span>Trải nghiệm ngay</span>
             <ArrowRight className="w-4 h-4" />
@@ -111,7 +112,7 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
 
           <button
             onClick={onOpenPublic}
-            className="flex items-center gap-2 px-5 py-3.5 bg-white hover:bg-slate-50 text-slate-700 text-sm sm:text-base font-bold rounded-2xl border border-slate-200 shadow-sm transition-all"
+            className="w-full sm:w-auto min-h-[48px] flex items-center justify-center gap-2 px-5 py-3.5 bg-white hover:bg-slate-50 text-slate-700 text-sm sm:text-base font-bold rounded-2xl border border-slate-200 shadow-sm transition-all"
           >
             <FileSearch className="w-4 h-4 text-slate-500" />
             <span>Tra cứu công khai</span>
@@ -121,7 +122,7 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
 
       {/* Interactive Visual Simulation Section */}
       <section className="max-w-5xl mx-auto bg-white rounded-3xl border border-slate-200/90 shadow-xl overflow-hidden">
-        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-teal-950 p-6 sm:p-8 text-white">
+        <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-teal-950 p-4 sm:p-8 text-white">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="space-y-1">
               <div className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-teal-400">
@@ -138,7 +139,7 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
           </div>
         </div>
 
-        <div className="p-6 sm:p-8 space-y-8">
+        <div className="p-4 sm:p-8 space-y-6 sm:space-y-8">
           {/* Controls grid */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-1.5">
@@ -151,7 +152,7 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
                 min="0"
                 value={elecStart}
                 onChange={(e) => setElecStart(Number(e.target.value) || 0)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full min-h-[44px] bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
 
@@ -165,7 +166,7 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
                 min={elecStart}
                 value={elecEnd}
                 onChange={(e) => setElecEnd(Number(e.target.value) || 0)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full min-h-[44px] bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
 
@@ -180,7 +181,7 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
                 max="20"
                 value={peopleCount}
                 onChange={(e) => setPeopleCount(Math.max(1, Number(e.target.value) || 1))}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full min-h-[44px] bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
 
@@ -194,7 +195,7 @@ export default function LandingPage({ onOpenAuth, onOpenPublic }) {
                 step="100"
                 value={actualElecRate}
                 onChange={(e) => setActualElecRate(Number(e.target.value) || 0)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
+                className="w-full min-h-[44px] bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-base font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
             </div>
           </div>

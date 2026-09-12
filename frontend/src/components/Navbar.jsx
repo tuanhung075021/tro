@@ -33,35 +33,66 @@ export default function Navbar({
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
   const dropdownRef = useRef(null);
-  // Persist read IDs across re-fetches using a Set in a ref
-  const readIdsRef = useRef(new Set());
+
+  // Storage key: tro_notif_read_${user.id} -> { read_ids: string[], markAllReadTs: number }
+  const getStoredNotifState = useCallback(() => {
+    if (!user?.id) return { readIds: new Set(), markAllReadTs: 0 };
+    try {
+      const raw = localStorage.getItem(`tro_notif_read_${user.id}`);
+      if (!raw) return { readIds: new Set(), markAllReadTs: 0 };
+      const parsed = JSON.parse(raw);
+      return {
+        readIds: new Set(Array.isArray(parsed.read_ids) ? parsed.read_ids : []),
+        markAllReadTs: typeof parsed.markAllReadTs === 'number' ? parsed.markAllReadTs : 0,
+      };
+    } catch {
+      return { readIds: new Set(), markAllReadTs: 0 };
+    }
+  }, [user?.id]);
+
+  const saveStoredNotifState = useCallback((readIdsSet, markAllReadTs) => {
+    if (!user?.id) return;
+    try {
+      const payload = {
+        read_ids: Array.from(readIdsSet),
+        markAllReadTs: markAllReadTs,
+      };
+      localStorage.setItem(`tro_notif_read_${user.id}`, JSON.stringify(payload));
+    } catch {
+      // Storage quota fallback
+    }
+  }, [user?.id]);
 
   const fetchNotifs = useCallback(async () => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !user) return;
     try {
       const data = await notifApi.get();
-      const list = (data || []).map((n) => ({
-        ...n,
-        read: readIdsRef.current.has(n.id) ? true : n.read,
-      }));
+      const { readIds, markAllReadTs } = getStoredNotifState();
+      const list = (data || []).map((n) => {
+        const nTime = n.timestamp ? new Date(n.timestamp).getTime() : 0;
+        const isRead = readIds.has(n.id) || (markAllReadTs > 0 && nTime > 0 && nTime <= markAllReadTs);
+        return {
+          ...n,
+          read: isRead,
+        };
+      });
       setNotifications(list);
       setUnreadCount(list.filter((n) => !n.read).length);
     } catch {
       // Fail silently on network error / unauthenticated
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user, getStoredNotifState]);
 
   // Fetch notifications on mount and every 30s
   useEffect(() => {
     if (!isAuthenticated) {
       setNotifications([]);
       setUnreadCount(0);
-      readIdsRef.current.clear();
       return;
     }
 
     fetchNotifs();
-    const timer = setInterval(fetchNotifs, 30000); // 30s poll (reduced from 15s)
+    const timer = setInterval(fetchNotifs, 30000); // 30s poll
     return () => clearInterval(timer);
   }, [isAuthenticated, fetchNotifs]);
 
@@ -77,19 +108,20 @@ export default function Navbar({
   }, []);
 
   const handleMarkAllRead = () => {
-    setNotifications((prev) => {
-      const updated = prev.map((n) => {
-        readIdsRef.current.add(n.id);
-        return { ...n, read: true };
-      });
-      return updated;
+    const now = Date.now();
+    const { readIds } = getStoredNotifState();
+    notifications.forEach((n) => {
+      if (n.id) readIds.add(n.id);
     });
+    saveStoredNotifState(readIds, now);
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     setUnreadCount(0);
   };
 
   const handleNotifClick = (n) => {
-    // Mark this one as read
-    readIdsRef.current.add(n.id);
+    const { readIds, markAllReadTs } = getStoredNotifState();
+    if (n.id) readIds.add(n.id);
+    saveStoredNotifState(readIds, markAllReadTs);
     setNotifications((prev) =>
       prev.map((x) => (x.id === n.id ? { ...x, read: true } : x))
     );
@@ -98,6 +130,15 @@ export default function Navbar({
     if (n.share_token) {
       onSelectInvoice?.(n.share_token);
     }
+  };
+
+  const getInitials = (name) => {
+    if (!name) return 'U';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
   };
 
   const formatTimestamp = (ts) => {
@@ -168,23 +209,27 @@ export default function Navbar({
                 setCurrentView?.('public');
                 window.history.pushState(null, '', '/public');
               }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium rounded-lg transition-colors ${
+              title="Tra cứu công khai"
+              aria-label="Tra cứu công khai hóa đơn"
+              className={`min-w-[44px] min-h-[44px] flex items-center justify-center gap-1.5 p-2.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium rounded-xl transition-colors ${
                 currentView === 'public'
-                  ? 'bg-slate-100 text-slate-900'
+                  ? 'bg-slate-100 text-slate-900 font-bold'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
               }`}
             >
-              <FileText className="w-4 h-4 text-slate-500" />
-              <span>Tra cứu công khai</span>
+              <FileText className="w-4 h-4 text-slate-500 flex-shrink-0" />
+              <span className="hidden sm:inline">Tra cứu công khai</span>
             </button>
 
             {/* Single Consolidated Tariff Modal Button */}
             <button
               onClick={onOpenTariffModal}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-lg transition-colors"
+              title="Biểu giá quy định"
+              aria-label="Xem biểu giá quy định nhà nước"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center gap-1.5 p-2.5 sm:px-3 sm:py-2 text-xs sm:text-sm font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-50 rounded-xl transition-colors"
             >
-              <Scale className="w-4 h-4 text-slate-500" />
-              <span>Biểu giá quy định</span>
+              <Scale className="w-4 h-4 text-slate-500 flex-shrink-0" />
+              <span className="hidden sm:inline">Biểu giá quy định</span>
             </button>
           </nav>
 
@@ -196,26 +241,27 @@ export default function Navbar({
                 <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={() => setShowNotifDropdown((prev) => !prev)}
-                    className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors"
+                    className="relative min-w-[44px] min-h-[44px] p-2.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition-colors flex items-center justify-center"
                     title="Thông báo"
+                    aria-label="Thông báo hệ thống"
                   >
                     <Bell className="w-5 h-5" />
                     {unreadCount > 0 && (
-                      <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse" />
+                      <span className="absolute top-2 right-2 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse" />
                     )}
                   </button>
 
                   {/* Dropdown panel */}
                   {showNotifDropdown && (
-                    <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150">
-                      <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                    <div className="fixed left-3 right-3 sm:absolute sm:left-auto sm:right-0 mt-2 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden z-50 animate-in fade-in zoom-in-95 duration-150 max-h-[85vh] flex flex-col">
+                      <div className="p-3.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
                         <div className="flex items-center gap-2">
                           <Bell className="w-4 h-4 text-primary-600" />
                           <span className="text-xs font-bold text-slate-900 uppercase tracking-wider">
                             Thông báo
                           </span>
                           {unreadCount > 0 && (
-                            <span className="px-1.5 py-0.2 bg-red-100 text-red-700 text-[10px] font-black rounded-full">
+                            <span className="px-1.5 py-0.5 bg-red-100 text-red-700 text-[10px] font-black rounded-full">
                               {unreadCount}
                             </span>
                           )}
@@ -223,7 +269,9 @@ export default function Navbar({
                         {notifications.length > 0 && (
                           <button
                             onClick={handleMarkAllRead}
-                            className="text-[11px] font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1"
+                            className="min-h-[44px] px-2.5 text-[11px] font-semibold text-primary-600 hover:text-primary-700 flex items-center gap-1 rounded-lg hover:bg-primary-50 transition-colors"
+                            title="Đã đọc tất cả thông báo"
+                            aria-label="Đã đọc tất cả thông báo"
                           >
                             <CheckCheck className="w-3.5 h-3.5" />
                             <span>Đã đọc tất cả</span>
@@ -231,7 +279,7 @@ export default function Navbar({
                         )}
                       </div>
 
-                      <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                      <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 overscroll-contain scrollbar-thin">
                         {notifications.length === 0 ? (
                           <div className="p-8 text-center text-xs text-slate-400">
                             Chưa có thông báo mới nào
@@ -273,18 +321,32 @@ export default function Navbar({
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2">
+                  {/* Avatar circle with initials on < sm */}
+                  <div
+                    className="w-8 h-8 rounded-full bg-primary-100 text-primary-700 font-bold flex items-center justify-center text-xs flex-shrink-0 border border-primary-300 sm:hidden"
+                    title={user.full_name || user.username}
+                  >
+                    {getInitials(user.full_name || user.username)}
+                  </div>
+
                   {/* Role Badge */}
                   {isLandlord && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      <Building2 className="w-3.5 h-3.5" />
-                      <span>Chủ trọ</span>
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      title="Tài khoản Chủ trọ"
+                    >
+                      <Building2 className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="hidden sm:inline">Chủ trọ</span>
                     </span>
                   )}
                   {isTenant && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-300">
-                      <UserCheck className="w-3.5 h-3.5" />
-                      <span>Người thuê</span>
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800 border border-blue-300"
+                      title="Tài khoản Người thuê"
+                    >
+                      <UserCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span className="hidden sm:inline">Người thuê</span>
                     </span>
                   )}
 
@@ -301,19 +363,22 @@ export default function Navbar({
                 <button
                   onClick={logout}
                   title="Đăng xuất"
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-medium text-slate-700 bg-slate-100 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors border border-slate-200"
+                  aria-label="Đăng xuất khỏi hệ thống"
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 text-xs sm:text-sm font-medium text-slate-700 bg-slate-100 hover:bg-red-50 hover:text-red-600 rounded-xl transition-colors border border-slate-200"
                 >
-                  <LogOut className="w-4 h-4" />
+                  <LogOut className="w-4 h-4 flex-shrink-0" />
                   <span className="hidden sm:inline">Đăng xuất</span>
                 </button>
               </>
             ) : (
               <button
                 onClick={onOpenAuthModal}
-                className="flex items-center gap-1.5 px-4 py-1.5 text-xs sm:text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-lg shadow-sm transition-all"
+                title="Đăng nhập / Đăng ký"
+                aria-label="Đăng nhập hoặc đăng ký tài khoản"
+                className="min-h-[44px] flex items-center gap-1.5 px-3 sm:px-4 py-2 text-xs sm:text-sm font-semibold text-white bg-primary-600 hover:bg-primary-700 rounded-xl shadow-sm transition-all"
               >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Đăng nhập / Đăng ký</span>
+                <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                <span>Đăng nhập<span className="hidden sm:inline"> / Đăng ký</span></span>
               </button>
             )}
           </div>

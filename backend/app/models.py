@@ -62,10 +62,17 @@ class Property(SQLModel, table=True):
     name: str
     address: Optional[str] = Field(default=None)
     landlord_id: Optional[int] = Field(default=None, foreign_key="user.id")
-    tariff_type: str = Field(default="statutory")  # "statutory" or "custom"
+    tariff_type: Optional[str] = Field(default="statutory")  # "statutory" or "custom"
     custom_elec_rate: Optional[float] = Field(default=None)
     custom_water_rate: Optional[float] = Field(default=None)
     custom_water_type: Optional[str] = Field(default="PER_M3")
+
+    def __init__(self, **data: Any):
+        if not data.get("tariff_type"):
+            data["tariff_type"] = "statutory"
+        if not data.get("custom_water_type"):
+            data["custom_water_type"] = "PER_M3"
+        super().__init__(**data)
 
 
 class Room(SQLModel, table=True):

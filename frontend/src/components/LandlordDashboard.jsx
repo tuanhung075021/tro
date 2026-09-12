@@ -80,21 +80,36 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
   const [calcResult, setCalcResult] = useState(null);
   const [calculating, setCalculating] = useState(false);
 
+  // Inline meter validations: end must be >= start
+  const isElecInvalid = useMemo(() => {
+    if (calcForm.elec_start === '' || calcForm.elec_end === '') return false;
+    const start = parseFloat(calcForm.elec_start);
+    const end = parseFloat(calcForm.elec_end);
+    return !isNaN(start) && !isNaN(end) && end < start;
+  }, [calcForm.elec_start, calcForm.elec_end]);
+
+  const isWaterInvalid = useMemo(() => {
+    if (calcForm.water_start === '' || calcForm.water_end === '') return false;
+    const start = parseFloat(calcForm.water_start);
+    const end = parseFloat(calcForm.water_end);
+    return !isNaN(start) && !isNaN(end) && end < start;
+  }, [calcForm.water_start, calcForm.water_end]);
+
   // Load properties
   const fetchProperties = useCallback(async () => {
     setLoadingProps(true);
     try {
       const data = await propApi.list();
       setPropertiesList(data || []);
-      if (data && data.length > 0 && !selectedProperty) {
-        setSelectedProperty(data[0]);
+      if (data && data.length > 0) {
+        setSelectedProperty((prev) => prev || data[0]);
       }
     } catch (err) {
       toast.error(err.message || 'Không thể tải danh sách khu trọ');
     } finally {
       setLoadingProps(false);
     }
-  }, [selectedProperty, toast]);
+  }, [toast]);
 
   useEffect(() => {
     fetchProperties();
@@ -294,6 +309,16 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
   const handleCalculateInvoice = async (e) => {
     e.preventDefault();
     if (!calcModalRoom) return;
+
+    if (isElecInvalid) {
+      toast.error('Chỉ số điện cuối không được nhỏ hơn chỉ số đầu.');
+      return;
+    }
+    if (isWaterInvalid) {
+      toast.error('Chỉ số nước cuối không được nhỏ hơn chỉ số đầu.');
+      return;
+    }
+
     setCalculating(true);
     setCalcResult(null);
     try {
@@ -307,6 +332,12 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
       }
       if (isNaN(waterStart) || isNaN(waterEnd)) {
         throw new Error('Vui lòng nhập chỉ số nước đầu và cuối hợp lệ.');
+      }
+      if (elecEnd < elecStart) {
+        throw new Error('Chỉ số điện cuối không được nhỏ hơn chỉ số đầu.');
+      }
+      if (waterEnd < waterStart) {
+        throw new Error('Chỉ số nước cuối không được nhỏ hơn chỉ số đầu.');
       }
 
       const isTier3 = calcForm.elec_method === 'TIER3';
@@ -389,7 +420,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
         <div className="flex items-center gap-2.5">
           <button
             onClick={() => setShowAddPropModal(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
+            className="min-h-[44px] flex items-center gap-1.5 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
           >
             <Plus className="w-4 h-4" />
             <span>Thêm khu trọ</span>
@@ -407,14 +438,25 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
           <button
             onClick={fetchProperties}
             title="Làm mới"
-            className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
+            aria-label="Làm mới danh sách khu trọ"
+            className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
 
         {loadingProps ? (
-          <div className="p-8 text-center text-slate-400 text-sm">Đang tải danh sách khu trọ...</div>
+          <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none sm:scrollbar-thin animate-pulse">
+            {[1, 2, 3].map((i) => (
+              <div key={i} className="min-w-[200px] h-[58px] bg-slate-100 rounded-2xl border border-slate-200 p-3 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-slate-200 flex-shrink-0" />
+                <div className="space-y-1.5 flex-1">
+                  <div className="h-3.5 bg-slate-200 rounded w-24" />
+                  <div className="h-2.5 bg-slate-200 rounded w-32" />
+                </div>
+              </div>
+            ))}
+          </div>
         ) : propertiesList.length === 0 ? (
           <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center bg-white">
             <Building2 className="w-10 h-10 text-slate-300 mx-auto mb-3" />
@@ -422,40 +464,43 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
             <p className="text-xs text-slate-400 mt-1 mb-4">Bấm nút bên dưới để tạo khu trọ đầu tiên của bạn</p>
             <button
               onClick={() => setShowAddPropModal(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl"
+              className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
             >
               <Plus className="w-4 h-4" />
               <span>Tạo khu trọ ngay</span>
             </button>
           </div>
         ) : (
-          <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-thin">
-            {propertiesList.map((p) => {
-              const active = selectedProperty?.id === p.id;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => setSelectedProperty(p)}
-                  className={`px-4 py-3 rounded-2xl border text-left whitespace-nowrap transition-all flex items-center gap-3 ${
-                    active
-                      ? 'border-primary-600 bg-primary-50/70 text-primary-950 ring-2 ring-primary-500/20 shadow-sm'
-                      : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
-                  }`}
-                >
-                  <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs ${
-                      active ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600'
+          <div className="relative">
+            <div className="flex items-center gap-3 overflow-x-auto pb-2 scrollbar-none sm:scrollbar-thin pr-8 sm:pr-0">
+              {propertiesList.map((p) => {
+                const active = selectedProperty?.id === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => setSelectedProperty(p)}
+                    className={`min-h-[44px] px-4 py-3 rounded-2xl border text-left whitespace-nowrap transition-all flex items-center gap-3 ${
+                      active
+                        ? 'border-primary-600 bg-primary-50/70 text-primary-950 ring-2 ring-primary-500/20 shadow-sm'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-slate-300'
                     }`}
                   >
-                    #{p.id}
-                  </div>
-                  <div>
-                    <p className="text-sm font-bold">{p.name}</p>
-                    <p className="text-xs text-slate-500 truncate max-w-[180px]">{p.address || 'Không có địa chỉ'}</p>
-                  </div>
-                </button>
-              );
-            })}
+                    <div
+                      className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs ${
+                        active ? 'bg-primary-600 text-white' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      #{p.id}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold">{p.name}</p>
+                      <p className="text-xs text-slate-500 truncate max-w-[180px]">{p.address || 'Không có địa chỉ'}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="pointer-events-none absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-slate-50 to-transparent sm:hidden" />
           </div>
         )}
       </div>
@@ -486,10 +531,10 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button
                 onClick={handleOpenTariffConfig}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all"
+                className="min-h-[44px] flex items-center gap-1.5 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-all"
                 title="Cấu hình biểu giá áp dụng cho khu trọ này"
               >
                 <SlidersHorizontal className="w-4 h-4 text-primary-600" />
@@ -498,7 +543,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
               <button
                 onClick={() => setShowAddRoomModal(true)}
-                className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+                className="min-h-[44px] flex items-center gap-1.5 px-4 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
               >
                 <Plus className="w-4 h-4" />
                 <span>Thêm phòng trọ</span>
@@ -508,7 +553,24 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
           {/* Rooms Grid */}
           {loadingRooms ? (
-            <div className="p-8 text-center text-slate-400 text-sm">Đang tải danh sách phòng...</div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-pulse">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="p-5 rounded-2xl border border-slate-200 bg-white space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="h-5 bg-slate-200 rounded w-28" />
+                    <div className="h-5 bg-slate-200 rounded-full w-20" />
+                  </div>
+                  <div className="space-y-2 py-2">
+                    <div className="h-3 bg-slate-200 rounded w-3/4" />
+                    <div className="h-10 bg-slate-100 rounded-xl" />
+                  </div>
+                  <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
+                    <div className="h-10 bg-slate-200 rounded-xl flex-1" />
+                    <div className="h-10 bg-slate-200 rounded-xl w-20" />
+                  </div>
+                </div>
+              ))}
+            </div>
           ) : roomsList.length === 0 ? (
             <div className="p-10 border-2 border-dashed border-slate-200 rounded-2xl text-center">
               <Home className="w-10 h-10 text-slate-300 mx-auto mb-2" />
@@ -516,7 +578,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
               <p className="text-xs text-slate-400 mt-1 mb-4">Hãy thêm phòng để quản lý chỉ số điện nước</p>
               <button
                 onClick={() => setShowAddRoomModal(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-primary-600 text-white text-xs font-bold rounded-xl"
+                className="inline-flex items-center justify-center gap-2 min-h-[44px] px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
               >
                 <Plus className="w-4 h-4" />
                 <span>Thêm phòng đầu tiên</span>
@@ -525,24 +587,33 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {roomsList.map((room) => {
-                const isOccupied = room.status === 'active' || room.tenant_id != null;
+                const isOccupied = room.status === 'occupied' || room.status === 'active' || room.tenant_id != null;
                 return (
                   <div
                     key={room.id}
-                    className="p-5 rounded-2xl border border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-md transition-all flex flex-col justify-between space-y-4"
+                    className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4 ${
+                      isOccupied
+                        ? 'border-emerald-300/90 bg-gradient-to-b from-emerald-50/40 via-white to-white shadow-xs hover:border-emerald-400 hover:shadow-md'
+                        : 'border-slate-200/90 bg-white hover:border-slate-300 hover:shadow-sm'
+                    }`}
                   >
                     <div>
                       {/* Room Header */}
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-lg font-black text-slate-900">Phòng {room.room_number}</span>
                         <span
-                          className={`px-2.5 py-0.5 text-xs font-bold rounded-full ${
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold rounded-full ${
                             isOccupied
                               ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                               : 'bg-slate-100 text-slate-600 border border-slate-200'
                           }`}
                         >
-                          {isOccupied ? 'Đang thuê' : 'Trống'}
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isOccupied ? 'bg-emerald-600 animate-pulse' : 'bg-slate-400'
+                            }`}
+                          />
+                          {isOccupied ? 'Đang thuê' : 'Phòng trống'}
                         </span>
                       </div>
 
@@ -558,10 +629,10 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
                         {/* Occupied room: display tenant details */}
                         {isOccupied ? (
-                          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/70 space-y-1">
+                          <div className="p-3 rounded-xl bg-emerald-50/50 border border-emerald-100/90 space-y-1.5">
                             <div className="flex items-center justify-between text-slate-700">
                               <span className="flex items-center gap-1 text-slate-500">
-                                <User className="w-3.5 h-3.5 text-primary-600" />
+                                <User className="w-3.5 h-3.5 text-emerald-600" />
                                 <span>Khách thuê:</span>
                               </span>
                               <span className="font-bold text-slate-900">
@@ -579,18 +650,18 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                             </div>
                           </div>
                         ) : (
-                          <div className="flex items-center justify-between">
-                            <span className="text-slate-500">Mã mời phòng:</span>
+                          <div className="flex items-center justify-between py-1">
+                            <span className="text-slate-500 font-medium">Mã mời phòng:</span>
                             <button
                               onClick={() => handleCopy(room.invite_code, `invite-${room.id}`)}
                               title="Sao chép mã mời"
-                              className="inline-flex items-center gap-1 font-mono font-bold text-primary-700 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-2 py-0.5 rounded border border-primary-200 transition-all"
+                              className="inline-flex items-center gap-1.5 min-h-[44px] font-mono font-bold text-primary-700 hover:text-primary-800 bg-primary-50 hover:bg-primary-100 px-3 py-2 rounded-xl border border-primary-200 transition-all text-xs"
                             >
                               <span>{room.invite_code}</span>
                               {copiedToken === `invite-${room.id}` ? (
-                                <Check className="w-3 h-3 text-emerald-600" />
+                                <Check className="w-3.5 h-3.5 text-emerald-600" />
                               ) : (
-                                <Copy className="w-3 h-3 text-slate-400" />
+                                <Copy className="w-3.5 h-3.5 text-slate-400" />
                               )}
                             </button>
                           </div>
@@ -599,34 +670,34 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                     </div>
 
                     {/* Actions */}
-                    <div className="pt-3 border-t border-slate-100 space-y-2">
-                      <div className="flex items-center gap-2">
+                    <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                         <button
                           onClick={() => handleOpenCalcModal(room)}
-                          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
+                          className="flex-1 min-h-[44px] flex items-center justify-center gap-2 px-3.5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-xs rounded-xl shadow-sm transition-all"
                         >
-                          <Calculator className="w-3.5 h-3.5" />
+                          <Calculator className="w-4 h-4" />
                           <span>Tính hóa đơn</span>
                         </button>
 
                         <button
                           onClick={() => handleOpenHistoryModal(room)}
                           title="Xem lịch sử hóa đơn phòng này"
-                          className="px-2.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1"
+                          className="min-h-[44px] px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-colors flex items-center justify-center gap-1.5"
                         >
-                          <FileText className="w-3.5 h-3.5 text-slate-500" />
-                          <span className="hidden sm:inline">Lịch sử</span>
+                          <FileText className="w-4 h-4 text-slate-500" />
+                          <span>Lịch sử</span>
                         </button>
                       </div>
 
-                      <div className="flex items-center justify-end">
+                      <div className="flex items-center justify-between sm:justify-end pt-0.5">
                         {isOccupied ? (
                           <button
                             onClick={() => handleRemoveTenant(room.id, room.room_number)}
                             title="Trả phòng & Đổi mã mời mới"
-                            className="text-[11px] text-red-600 hover:text-red-700 hover:underline flex items-center gap-1"
+                            className="min-h-[44px] px-2.5 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg flex items-center gap-1.5 font-medium transition-colors"
                           >
-                            <UserX className="w-3 h-3" />
+                            <UserX className="w-3.5 h-3.5" />
                             <span>Trả phòng</span>
                           </button>
                         ) : (
@@ -636,9 +707,9 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                               setAssignInput('');
                               setAssignError(null);
                             }}
-                            className="text-[11px] text-primary-600 hover:text-primary-700 hover:underline flex items-center gap-1 font-semibold"
+                            className="min-h-[44px] px-2.5 text-xs text-primary-600 hover:text-primary-700 hover:bg-primary-50 rounded-lg flex items-center gap-1.5 font-semibold transition-colors"
                           >
-                            <UserPlus className="w-3 h-3" />
+                            <UserPlus className="w-3.5 h-3.5" />
                             <span>Gán người thuê</span>
                           </button>
                         )}
@@ -778,13 +849,13 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 <button
                   type="button"
                   onClick={() => setShowTariffConfigModal(false)}
-                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                  className="min-h-[44px] px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-xl inline-flex items-center justify-center"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl shadow-sm"
+                  className="min-h-[44px] px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl shadow-sm inline-flex items-center justify-center"
                 >
                   Lưu cấu hình
                 </button>
@@ -831,13 +902,13 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 <button
                   type="button"
                   onClick={() => setShowAddPropModal(false)}
-                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                  className="min-h-[44px] px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-xl inline-flex items-center justify-center"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl"
+                  className="min-h-[44px] px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl inline-flex items-center justify-center"
                 >
                   Tạo khu trọ
                 </button>
@@ -894,13 +965,13 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 <button
                   type="button"
                   onClick={() => setShowAddRoomModal(false)}
-                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                  className="min-h-[44px] px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-xl inline-flex items-center justify-center"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl"
+                  className="min-h-[44px] px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl inline-flex items-center justify-center"
                 >
                   Tạo phòng
                 </button>
@@ -912,14 +983,14 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
       {/* MODAL: Tính Hóa Đơn (Draft vs Publish Flow) */}
       {calcModalRoom && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
-          <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-2xl w-full shadow-2xl border border-slate-200 my-8">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center sm:p-4 bg-slate-900/60 backdrop-blur-sm overflow-y-auto">
+          <div className="bg-white max-w-full w-full rounded-none sm:rounded-3xl sm:max-w-2xl p-4 sm:p-8 shadow-2xl border border-slate-200 my-0 sm:my-8 max-h-[100vh] sm:max-h-[90vh] overflow-y-auto scrollbar-thin">
+            <div className="flex items-start sm:items-center justify-between pb-4 border-b border-slate-100 mb-6 gap-2">
               <div>
                 <div className="text-xs font-bold text-primary-600 uppercase tracking-wider">
                   Tính cước & Sinh hóa đơn minh bạch
                 </div>
-                <h3 className="text-2xl font-black text-slate-900">
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 mt-0.5">
                   Phòng {calcModalRoom.room_number} — {selectedProperty?.name}
                 </h3>
               </div>
@@ -928,18 +999,20 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                   setCalcModalRoom(null);
                   setCalcResult(null);
                 }}
-                className="text-slate-400 hover:text-slate-700 font-bold text-lg p-1.5"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-700 font-bold text-lg rounded-xl hover:bg-slate-100 transition-colors"
+                title="Đóng modal"
+                aria-label="Đóng"
               >
                 ✕
               </button>
             </div>
 
             {selectedProperty?.tariff_type === 'custom' && (
-              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-2xl text-xs text-blue-900 flex items-center justify-between gap-2">
+              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-2xl text-xs text-blue-900 flex items-center justify-between gap-2 mb-5">
                 <span className="font-semibold">
                   ⚙️ Biểu giá khu trọ: <strong>{Number(selectedProperty.custom_elec_rate).toLocaleString('vi-VN')} đ/kWh</strong> • Nước: <strong>{Number(selectedProperty.custom_water_rate).toLocaleString('vi-VN')} đ/{selectedProperty.custom_water_type === 'PER_PERSON' ? 'người' : 'm³'}</strong>
                 </span>
-                <span className="text-[10px] text-blue-700 font-medium">Tự động áp dụng & đối chiếu</span>
+                <span className="text-[10px] text-blue-700 font-medium hidden sm:inline">Tự động áp dụng & đối chiếu</span>
               </div>
             )}
 
@@ -954,8 +1027,9 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                     required
                     value={calcForm.month_year}
                     onChange={(e) => setCalcForm({ ...calcForm, month_year: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 min-h-[44px]"
                   />
+                  <p className="text-[11px] text-slate-400 mt-1">Định dạng YYYY-MM (Ví dụ: 2026-09)</p>
                 </div>
 
                 <div>
@@ -965,11 +1039,12 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                   <select
                     value={calcForm.elec_method}
                     onChange={(e) => setCalcForm({ ...calcForm, elec_method: e.target.value })}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 min-h-[44px]"
                   >
-                    <option value="TIERED">Bậc thang 6 bậc (Luật định - Khuyên dùng)</option>
+                    <option value="TIERED">Bậc thang 6 bậc (Luật định)</option>
                     <option value="TIER3">Đồng giá bậc 3 (2.380 đ/kWh)</option>
                   </select>
+                  <p className="text-[11px] text-slate-400 mt-1">Khuyên dùng bậc thang 6 bậc chuẩn</p>
                 </div>
               </div>
 
@@ -978,7 +1053,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 <span className="text-xs font-bold uppercase tracking-wider text-amber-700 flex items-center gap-1.5">
                   ⚡ Chỉ số Điện (kWh)
                 </span>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">Chỉ số đầu</label>
                     <input
@@ -988,7 +1063,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                       value={calcForm.elec_start}
                       onChange={(e) => setCalcForm({ ...calcForm, elec_start: e.target.value })}
                       placeholder="0"
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm"
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   <div>
@@ -1000,10 +1075,19 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                       value={calcForm.elec_end}
                       onChange={(e) => setCalcForm({ ...calcForm, elec_end: e.target.value })}
                       placeholder="150"
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm"
+                      className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-sm min-h-[44px] focus:outline-none focus:ring-2 ${
+                        isElecInvalid
+                          ? 'border-red-500 bg-red-50/40 text-red-900 focus:ring-red-400'
+                          : 'border-slate-200 focus:ring-primary-500'
+                      }`}
                     />
                   </div>
                 </div>
+                {isElecInvalid && (
+                  <p className="text-xs text-red-600 font-semibold mt-1 flex items-center gap-1">
+                    <span>⚠️ Chỉ số điện cuối không được nhỏ hơn chỉ số đầu.</span>
+                  </p>
+                )}
               </div>
 
               {/* Chỉ số nước */}
@@ -1011,7 +1095,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 <span className="text-xs font-bold uppercase tracking-wider text-blue-700 flex items-center gap-1.5">
                   💧 Chỉ số Nước (m³)
                 </span>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] text-slate-500 mb-1">Chỉ số đầu</label>
                     <input
@@ -1021,7 +1105,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                       value={calcForm.water_start}
                       onChange={(e) => setCalcForm({ ...calcForm, water_start: e.target.value })}
                       placeholder="0"
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm"
+                      className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-sm min-h-[44px] focus:outline-none focus:ring-2 focus:ring-primary-500"
                     />
                   </div>
                   <div>
@@ -1033,10 +1117,19 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                       value={calcForm.water_end}
                       onChange={(e) => setCalcForm({ ...calcForm, water_end: e.target.value })}
                       placeholder="5"
-                      className="w-full px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-sm"
+                      className={`w-full px-3.5 py-2.5 bg-white border rounded-xl text-sm min-h-[44px] focus:outline-none focus:ring-2 ${
+                        isWaterInvalid
+                          ? 'border-red-500 bg-red-50/40 text-red-900 focus:ring-red-400'
+                          : 'border-slate-200 focus:ring-primary-500'
+                      }`}
                     />
                   </div>
                 </div>
+                {isWaterInvalid && (
+                  <p className="text-xs text-red-600 font-semibold mt-1 flex items-center gap-1">
+                    <span>⚠️ Chỉ số nước cuối không được nhỏ hơn chỉ số đầu.</span>
+                  </p>
+                )}
               </div>
 
               {/* Tiền thực thu để đối chiếu thu lố */}
@@ -1049,18 +1142,18 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                   value={calcForm.actual_collected_amount}
                   onChange={(e) => setCalcForm({ ...calcForm, actual_collected_amount: e.target.value })}
                   placeholder="Để trống nếu thu đúng theo luật định"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 min-h-[44px]"
                 />
               </div>
 
               {/* LIVE COMPLIANCE ALERT IN FORM */}
               {liveFormCompliance && (
-                <div className="p-3.5 bg-red-50 border-2 border-red-400 rounded-2xl text-xs text-red-900 space-y-1">
+                <div className="p-3.5 bg-red-50 border-2 border-red-400 rounded-2xl text-xs text-red-900 space-y-1 animate-pulse">
                   <div className="flex items-center gap-2 font-black text-red-700">
-                    <ShieldAlert className="w-4 h-4" />
+                    <ShieldAlert className="w-4 h-4 text-red-600 flex-shrink-0" />
                     <span>CẢNH BÁO VI PHẠM ĐỊNH MỨC (Nghị định 104/2022/NĐ-CP)</span>
                   </div>
-                  <p>
+                  <p className="leading-relaxed">
                     Số tiền bạn nhập thu (<strong>{liveFormCompliance.actualEst.toLocaleString('vi-VN')} đ</strong>) cao hơn mức luật định dự kiến (~{liveFormCompliance.approxStatutoryTotal.toLocaleString('vi-VN')} đ). Chênh lệch thu lố dự kiến: <strong>+{liveFormCompliance.diff.toLocaleString('vi-VN')} đ</strong>!
                   </p>
                 </div>
@@ -1068,15 +1161,15 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
               <button
                 type="submit"
-                disabled={calculating}
-                className="w-full py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-60"
+                disabled={calculating || isElecInvalid || isWaterInvalid}
+                className="w-full min-h-[44px] py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-xl shadow-md flex items-center justify-center gap-2 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {calculating ? (
                   <span className="inline-block animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
                 ) : (
                   <>
                     <Calculator className="w-4 h-4" />
-                    <span>Tạo bản nháp hóa đơn (Draft)</span>
+                    <span>{calcResult ? 'Tính lại / Cập nhật' : 'Tạo bản nháp hóa đơn (Draft)'}</span>
                   </>
                 )}
               </button>
@@ -1085,7 +1178,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
             {/* BREAKDOWN RESULTS & DRAFT / PUBLISH ACTIONS */}
             {calcResult && (
               <div className="mt-6 pt-6 border-t border-slate-200 space-y-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <h4 className="text-base font-bold text-slate-900 flex items-center gap-2">
                     <FileText className="w-4 h-4 text-primary-600" />
                     <span>Kết quả tính toán</span>
@@ -1093,11 +1186,11 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
                   {/* Status Badge */}
                   {calcResult.status === 'published' ? (
-                    <span className="px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full border border-emerald-300">
+                    <span className="self-start sm:self-auto px-3 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full border border-emerald-300">
                       Đã phát hành (Published)
                     </span>
                   ) : (
-                    <span className="px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-300">
+                    <span className="self-start sm:self-auto px-3 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full border border-amber-300">
                       Bản nháp (Draft) — Chưa gửi khách
                     </span>
                   )}
@@ -1107,7 +1200,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 {calcResult.diff_amount > 0 ? (
                   <div className="p-4 bg-red-50 border-2 border-red-500 rounded-2xl text-red-900 space-y-1.5 shadow-sm">
                     <div className="flex items-center gap-2 font-black text-red-600 text-sm">
-                      <ShieldAlert className="w-5 h-5" />
+                      <ShieldAlert className="w-5 h-5 flex-shrink-0" />
                       <span>CẢNH BÁO: CHÊNH LỆCH THU LỐ {Number(calcResult.diff_amount).toLocaleString('vi-VN')} VNĐ!</span>
                     </div>
                     <p className="text-xs text-red-800 leading-relaxed">
@@ -1122,7 +1215,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 )}
 
                 {/* Summary amounts */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                     <p className="text-[11px] text-slate-500 font-semibold">Tiền điện (VAT 8%)</p>
                     <p className="text-base font-black text-slate-900 mt-1">
@@ -1139,7 +1232,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                     <p className="text-[10px] text-slate-400">{calcResult.water_usage} m³</p>
                   </div>
 
-                  <div className="p-3 bg-primary-50 rounded-xl border border-primary-200 col-span-2 sm:col-span-1">
+                  <div className="p-3 bg-primary-50 rounded-xl border border-primary-200">
                     <p className="text-[11px] text-primary-700 font-bold">Tổng luật định</p>
                     <p className="text-base font-black text-primary-800 mt-1">
                       {Number(calcResult.total_statutory_amount).toLocaleString('vi-VN')} đ
@@ -1149,7 +1242,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
                 {/* Short Code & Publish Actions */}
                 <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-3">
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-xs font-bold text-emerald-400">Mã tra cứu ngắn:</span>
@@ -1162,12 +1255,12 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       {calcResult.short_code && (
                         <button
                           type="button"
                           onClick={() => handleCopy(calcResult.short_code, 'short-code')}
-                          className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                          className="min-h-[44px] px-3.5 py-2 bg-white/10 hover:bg-white/20 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors"
                         >
                           <Copy className="w-3.5 h-3.5 text-slate-300" />
                           <span>{copiedToken === 'short-code' ? 'Đã sao chép!' : 'Chép mã'}</span>
@@ -1177,7 +1270,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                       <button
                         type="button"
                         onClick={() => onViewPublicInvoice?.(calcResult.share_token)}
-                        className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-colors"
+                        className="min-h-[44px] px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                         <span>Xem hóa đơn</span>
@@ -1187,15 +1280,15 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
 
                   {/* Publish Button */}
                   {calcResult.status !== 'published' ? (
-                    <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-3">
-                      <span className="text-xs text-amber-300">
+                    <div className="pt-2 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <span className="text-xs text-amber-300 leading-relaxed">
                         Hóa đơn hiện ở trạng thái <strong>Bản nháp</strong> và chưa hiển thị cho người thuê.
                       </span>
                       <button
                         type="button"
                         disabled={publishing}
                         onClick={() => handlePublishInvoice(calcResult.id)}
-                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md flex-shrink-0"
+                        className="min-h-[44px] px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all shadow-md flex-shrink-0"
                       >
                         {publishing ? (
                           <span className="inline-block animate-spin rounded-full h-3.5 w-3.5 border-2 border-white border-t-transparent" />
@@ -1233,7 +1326,9 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
               </div>
               <button
                 onClick={() => setHistoryModalRoom(null)}
-                className="text-slate-400 hover:text-slate-700 font-bold text-lg p-1.5"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-700 font-bold text-lg rounded-xl hover:bg-slate-100 transition-colors"
+                title="Đóng"
+                aria-label="Đóng"
               >
                 ✕
               </button>
@@ -1242,11 +1337,26 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
             {loadingHistory ? (
               <div className="p-8 text-center text-slate-400 text-sm">Đang tải lịch sử...</div>
             ) : roomInvoicesList.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-xs">
-                Chưa có hóa đơn nào được tạo cho phòng này.
+              <div className="p-8 border-2 border-dashed border-slate-200 rounded-2xl text-center bg-slate-50/40">
+                <FileText className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-semibold text-slate-700">Chưa có hóa đơn nào cho phòng này</p>
+                <p className="text-xs text-slate-400 mt-1 mb-4">
+                  Bấm "Tính hóa đơn" trên thẻ phòng để lập bản kê nháp cho kỳ này.
+                </p>
+                <button
+                  onClick={() => {
+                    const r = historyModalRoom;
+                    setHistoryModalRoom(null);
+                    handleOpenCalcModal(r);
+                  }}
+                  className="inline-flex items-center gap-1.5 min-h-[44px] px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white text-xs font-bold rounded-xl transition-all shadow-sm"
+                >
+                  <Calculator className="w-4 h-4" />
+                  <span>Lập hóa đơn ngay</span>
+                </button>
               </div>
             ) : (
-              <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-96 overflow-y-auto pr-1 scrollbar-thin">
                 {roomInvoicesList.map((inv) => (
                   <div
                     key={inv.id}
@@ -1279,9 +1389,9 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                       {inv.status !== 'published' && (
                         <button
                           onClick={() => handlePublishInvoice(inv.id)}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center gap-1 shadow-sm"
+                          className="min-h-[44px] px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm"
                         >
-                          <Send className="w-3 h-3" />
+                          <Send className="w-3.5 h-3.5" />
                           <span>Phát hành</span>
                         </button>
                       )}
@@ -1291,9 +1401,9 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                           setHistoryModalRoom(null);
                           onViewPublicInvoice?.(inv.share_token);
                         }}
-                        className="px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1"
+                        className="min-h-[44px] px-3.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold rounded-xl flex items-center gap-1.5"
                       >
-                        <ExternalLink className="w-3 h-3" />
+                        <ExternalLink className="w-3.5 h-3.5" />
                         <span>Xem</span>
                       </button>
                     </div>
@@ -1331,7 +1441,7 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                   value={assignInput}
                   onChange={(e) => setAssignInput(e.target.value)}
                   placeholder="Ví dụ: nguyenvana hoặc 0912345678"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 min-h-[44px]"
                 />
               </div>
 
@@ -1339,14 +1449,14 @@ export default function LandlordDashboard({ onViewPublicInvoice }) {
                 <button
                   type="button"
                   onClick={() => setAssignModalRoom(null)}
-                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+                  className="min-h-[44px] px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-xl inline-flex items-center justify-center"
                 >
                   Hủy
                 </button>
                 <button
                   type="submit"
                   disabled={assignLoading}
-                  className="px-5 py-2 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl disabled:opacity-60"
+                  className="min-h-[44px] px-5 py-2.5 bg-primary-600 hover:bg-primary-700 text-white font-semibold text-sm rounded-xl disabled:opacity-60 shadow-sm flex items-center justify-center"
                 >
                   {assignLoading ? 'Đang gán...' : 'Gán người thuê'}
                 </button>

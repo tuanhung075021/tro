@@ -10,6 +10,7 @@ const ToastContext = createContext(null);
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
+  const recentToastsRef = React.useRef(new Map());
 
   const removeToast = useCallback((id) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -17,10 +18,22 @@ export function ToastProvider({ children }) {
 
   const addToast = useCallback(
     (message, type = 'info', duration = 3500) => {
-      const id = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      if (!message) return null;
+
+      // Chống spam: Nếu thông báo cùng loại và nội dung xuất hiện trong vòng 2.5 giây, bỏ qua không tạo popup trùng
+      const now = Date.now();
+      const key = `${type}:${message}`;
+      const lastShown = recentToastsRef.current.get(key);
+      if (lastShown && now - lastShown < 2500) {
+        return null;
+      }
+      recentToastsRef.current.set(key, now);
+
+      const id = `${now}-${Math.random().toString(36).substr(2, 9)}`;
       const newToast = { id, message, type };
 
-      setToasts((prev) => [...prev, newToast]);
+      // Giới hạn tối đa 3 popup hiển thị cùng lúc để tránh che khuất giao diện
+      setToasts((prev) => [...prev.slice(-2), newToast]);
 
       if (duration > 0) {
         setTimeout(() => {

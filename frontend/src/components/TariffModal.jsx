@@ -29,12 +29,12 @@ export default function TariffModal({ isOpen, onClose }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
-      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+      <div className="bg-white rounded-2xl sm:rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-scaleIn">
         {/* Header */}
-        <div className="sticky top-0 bg-white/95 backdrop-blur px-6 py-4 border-b border-slate-100 flex items-center justify-between z-10">
+        <div className="sticky top-0 bg-white/95 backdrop-blur px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-100 flex items-center justify-between z-10">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center flex-shrink-0">
               <Scale className="w-5 h-5" />
             </div>
             <div>
@@ -44,14 +44,14 @@ export default function TariffModal({ isOpen, onClose }) {
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition-colors"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 active:scale-95 rounded-xl transition-colors"
             title="Đóng (Esc)"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6 space-y-6 text-xs sm:text-sm">
+        <div className="p-4 sm:p-6 space-y-5 sm:space-y-6 text-xs sm:text-sm overflow-y-auto scrollbar-thin">
           {/* Căn cứ pháp lý tóm lược */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1">
@@ -85,23 +85,23 @@ export default function TariffModal({ isOpen, onClose }) {
               <span className="text-[11px] text-slate-400">Đơn vị: VNĐ / kWh</span>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-200">
-              <table className="w-full text-left text-xs">
+            <div className="overflow-x-auto scrollbar-thin rounded-2xl border border-slate-200">
+              <table className="w-full min-w-[480px] sm:min-w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-600 font-semibold border-b border-slate-200">
                   <tr>
-                    <th className="py-2.5 px-3">Bậc</th>
-                    <th className="py-2.5 px-3">Khoảng tiêu thụ</th>
-                    <th className="py-2.5 px-3 text-right">Giá gốc</th>
-                    <th className="py-2.5 px-3 text-right text-primary-700">Giá có VAT (8%)</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Bậc</th>
+                    <th className="py-2.5 px-3 whitespace-nowrap">Khoảng tiêu thụ</th>
+                    <th className="py-2.5 px-3 text-right whitespace-nowrap">Giá gốc</th>
+                    <th className="py-2.5 px-3 text-right text-primary-700 whitespace-nowrap">Giá có VAT (8%)</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {tiers.map((t) => (
                     <tr key={t.tier} className={t.tier === 3 ? 'bg-amber-50/40' : 'hover:bg-slate-50/50'}>
-                      <td className="py-2 px-3 font-bold text-slate-800">Bậc {t.tier}</td>
-                      <td className="py-2 px-3 text-slate-600">{t.range}</td>
-                      <td className="py-2 px-3 text-right font-mono text-slate-700">{t.price}</td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-primary-700">{t.priceVat}</td>
+                      <td className="py-2 px-3 font-bold text-slate-800 whitespace-nowrap">Bậc {t.tier}</td>
+                      <td className="py-2 px-3 text-slate-600 whitespace-nowrap">{t.range}</td>
+                      <td className="py-2 px-3 text-right font-mono text-slate-700 whitespace-nowrap">{t.price}</td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-primary-700 whitespace-nowrap">{t.priceVat}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -141,10 +141,10 @@ export default function TariffModal({ isOpen, onClose }) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+        <div className="px-4 sm:px-6 py-3.5 bg-slate-50 border-t border-slate-100 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs rounded-xl transition-all"
+            className="min-h-[44px] w-full sm:w-auto px-6 py-2.5 bg-slate-800 hover:bg-slate-900 active:scale-[0.98] text-white font-bold text-xs rounded-xl shadow-sm transition-all flex items-center justify-center"
           >
             Đã hiểu & Đóng
           </button>

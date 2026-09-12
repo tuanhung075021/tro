@@ -107,7 +107,7 @@ function MainLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col justify-between">
-      <div>
+      <div className="flex-1 flex flex-col">
         <Navbar
           currentView={currentView}
           setCurrentView={setCurrentView}
@@ -116,7 +116,7 @@ function MainLayout() {
           onSelectInvoice={handleViewPublicInvoice}
         />
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
           {/* VIEW ROUTER */}
           {currentView === 'public' ? (
             <PublicInvoiceView initialToken={publicToken} onBackToHome={handleBackToHome} />
@@ -141,9 +141,9 @@ function MainLayout() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-16 bg-white border-t border-slate-200 py-6 text-xs text-slate-500 no-print">
+      <footer className="relative z-0 mt-12 sm:mt-16 bg-white border-t border-slate-200 py-6 text-xs text-slate-500 no-print">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 text-center sm:text-left">
             <span className="text-base font-black text-slate-900">
               tro<span className="text-primary-600">.</span>
             </span>

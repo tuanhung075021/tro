@@ -21,6 +21,7 @@ import {
   Home,
   CheckCircle2,
   Bookmark,
+  Loader2,
 } from 'lucide-react';
 
 export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
@@ -114,8 +115,8 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       {/* Top Search Bar */}
-      <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-sm no-print">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-4 sm:p-8 border border-slate-200/80 shadow-sm no-print">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
             <span className="text-xs font-bold uppercase tracking-wider text-primary-600">
               Cổng Tra Cứu Hóa Đơn Công Khai
@@ -128,14 +129,14 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
           {onBackToHome && (
             <button
               onClick={onBackToHome}
-              className="text-xs font-semibold text-slate-600 hover:text-slate-900 px-3 py-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 transition-colors self-start sm:self-auto"
+              className="min-h-[44px] px-4 py-2.5 inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors self-start sm:self-auto"
             >
               ← Về trang chủ
             </button>
           )}
         </div>
 
-        <form onSubmit={handleSearch} className="flex gap-2">
+        <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2.5 sm:gap-2">
           <div className="relative flex-1">
             <Search className="w-5 h-5 text-slate-400 absolute left-3.5 top-3.5" />
             <input
@@ -144,15 +145,22 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
               value={tokenInput}
               onChange={(e) => setTokenInput(e.target.value)}
               placeholder="Nhập mã tra cứu ngắn (ví dụ: HD-89B2) hoặc link share token..."
-              className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
+              className="min-h-[44px] h-12 w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-base sm:text-sm font-mono focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all"
             />
           </div>
           <button
             type="submit"
             disabled={loading}
-            className="px-6 py-3 bg-primary-600 hover:bg-primary-700 text-white font-bold text-sm rounded-2xl shadow-md transition-all disabled:opacity-60"
+            className="min-h-[44px] h-12 w-full sm:w-auto px-6 py-3 bg-primary-600 hover:bg-primary-700 active:scale-[0.98] text-white font-bold text-sm rounded-2xl shadow-md transition-all disabled:opacity-60 flex items-center justify-center gap-2 whitespace-nowrap"
           >
-            {loading ? 'Đang tìm...' : 'Tra cứu'}
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Đang tìm...</span>
+              </>
+            ) : (
+              'Tra cứu'
+            )}
           </button>
         </form>
       </div>
@@ -170,33 +178,64 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
       {/* Loading state */}
       {loading && (
-        <div className="p-12 text-center text-slate-400 text-sm no-print">
-          <span className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-primary-500 border-t-transparent mb-3" />
+        <div className="p-12 text-center text-slate-400 text-sm no-print flex flex-col items-center justify-center space-y-3">
+          <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
           <p>Đang tải dữ liệu hóa đơn công khai...</p>
+        </div>
+      )}
+
+      {/* Empty / Initial Welcome State */}
+      {!invoice && !loading && !error && (
+        <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 p-6 sm:p-12 text-center shadow-sm space-y-5 no-print">
+          <div className="w-16 h-16 rounded-3xl bg-primary-50 border border-primary-100 flex items-center justify-center text-primary-600 mx-auto shadow-inner">
+            <Search className="w-8 h-8" />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="text-lg sm:text-xl font-black text-slate-900">
+              Tra cứu hóa đơn điện nước minh bạch
+            </h3>
+            <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+              Nhập <strong>Mã hóa đơn ngắn</strong> (ví dụ: <span className="font-mono font-bold text-primary-700 bg-primary-50 px-1.5 py-0.5 rounded">HD-89B2</span>) hoặc dán toàn bộ đường dẫn chia sẻ do chủ trọ cung cấp vào ô phía trên để kiểm tra đối chiếu chi phí.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg mx-auto pt-4 border-t border-slate-100 text-left">
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+              <p className="text-xs font-bold text-slate-800">Chuẩn luật định</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Áp dụng QĐ 1279 & TT 60/2025/TT-BCT</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+              <p className="text-xs font-bold text-slate-800">Cảnh báo thu lố</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Phát hiện chênh lệch NĐ 104/2022/NĐ-CP</p>
+            </div>
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80">
+              <p className="text-xs font-bold text-slate-800">In ấn A4 FOSS</p>
+              <p className="text-[11px] text-slate-500 mt-0.5">Xuất file PDF & in hóa đơn chuẩn mực</p>
+            </div>
+          </div>
         </div>
       )}
 
       {/* Invoice Card */}
       {invoice && !loading && (
-        <div className="printable-invoice bg-white rounded-3xl border border-slate-200/90 shadow-xl overflow-hidden print:shadow-none print:border-none">
+        <div className="printable-invoice bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 shadow-xl overflow-hidden print:shadow-none print:border-none">
           {/* Invoice Header */}
-          <div className="p-6 sm:p-8 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:bg-slate-100 print:text-slate-900 print:border-b print:border-slate-300">
+          <div className="p-4 sm:p-8 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:bg-slate-100 print:text-slate-900 print:border-b print:border-slate-300">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-2xl font-black tracking-tight text-white print:text-slate-900">
                   tro<span className="text-primary-500">.</span>
                 </span>
                 {invoice.status === 'published' ? (
-                  <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 print:text-emerald-800 print:bg-emerald-100">
+                  <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 print:text-emerald-800 print:bg-emerald-100">
                     Đã phát hành
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 print:text-amber-800 print:bg-amber-100">
+                  <span className="px-2.5 py-0.5 text-[11px] font-bold rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 print:text-amber-800 print:bg-amber-100">
                     Bản nháp (Draft)
                   </span>
                 )}
                 {invoice.short_code && (
-                  <span className="px-2 py-0.5 text-[11px] font-mono font-bold rounded-full bg-white/10 text-white border border-white/20 print:text-slate-800 print:bg-slate-200">
+                  <span className="px-2.5 py-0.5 text-[11px] font-mono font-bold rounded-full bg-white/10 text-white border border-white/20 print:text-slate-800 print:bg-slate-200">
                     Mã: {invoice.short_code}
                   </span>
                 )}
@@ -210,11 +249,11 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
               </p>
             </div>
 
-            <div className="flex items-center gap-2 no-print">
+            <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 no-print w-full sm:w-auto">
               {invoice.short_code && (
                 <button
                   onClick={() => handleCopyCode(invoice.short_code)}
-                  className="px-3 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  className="min-h-[44px] px-3.5 py-2.5 bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
                   title="Sao chép mã tra cứu"
                 >
                   <Bookmark className="w-3.5 h-3.5 text-primary-400" />
@@ -224,7 +263,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
               <button
                 onClick={handleCopyLink}
-                className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                className="min-h-[44px] px-3.5 py-2.5 bg-white/10 hover:bg-white/20 active:scale-[0.98] text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors"
               >
                 {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
                 <span>{copied ? 'Đã sao chép' : 'Sao chép link'}</span>
@@ -232,7 +271,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
               <button
                 onClick={() => window.print()}
-                className="px-3.5 py-2 bg-primary-600 hover:bg-primary-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors shadow-sm"
+                className="col-span-2 sm:col-span-1 min-h-[44px] px-4 py-2.5 bg-primary-600 hover:bg-primary-500 active:scale-[0.98] text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
               >
                 <Printer className="w-4 h-4" />
                 <span>In hóa đơn / Lưu PDF</span>
@@ -241,9 +280,9 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
           </div>
 
           {/* DISPUTE OVERCHARGE BANNER */}
-          <div className="p-6 border-b border-slate-200">
+          <div className="p-4 sm:p-6 border-b border-slate-200">
             {isOvercharged ? (
-              <div className="p-5 bg-red-50 border-2 border-red-500 rounded-2xl text-red-900 space-y-2">
+              <div className="p-4 sm:p-5 bg-red-50 border-2 border-red-500 rounded-2xl text-red-900 space-y-2">
                 <div className="flex items-center gap-2 text-base font-black text-red-600">
                   <ShieldAlert className="w-6 h-6" />
                   <span>PHÁT HIỆN THU LỐ: {Number(invoice.diff_amount).toLocaleString('vi-VN')} VNĐ!</span>
@@ -251,10 +290,16 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
                 <p className="text-xs sm:text-sm text-red-800 leading-relaxed">
                   Căn cứ Điều 12 Nghị định 134/2013/NĐ-CP (sửa đổi bởi Nghị định 17/2022/NĐ-CP) và Nghị định 104/2022/NĐ-CP, hành vi thu tiền điện của người thuê trọ cao hơn giá quy định của nhà nước có thể bị phạt tiền từ <strong>20.000.000 đ đến 30.000.000 đ</strong>.
                 </p>
-                <div className="pt-2 flex flex-wrap gap-4 text-xs font-semibold">
-                  <span>Tiền luật định: <strong>{Number(invoice.total_statutory_amount).toLocaleString('vi-VN')} đ</strong></span>
-                  <span>Tiền thực thu: <strong>{Number(invoice.actual_collected_amount).toLocaleString('vi-VN')} đ</strong></span>
-                  <span>Chênh lệch thu lố: <strong className="text-red-600">+{Number(invoice.diff_amount).toLocaleString('vi-VN')} đ</strong></span>
+                <div className="pt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-xs font-semibold">
+                  <div className="p-2.5 bg-white/70 rounded-xl">
+                    Tiền luật định: <strong className="text-slate-900 block sm:inline">{Number(invoice.total_statutory_amount).toLocaleString('vi-VN')} đ</strong>
+                  </div>
+                  <div className="p-2.5 bg-white/70 rounded-xl">
+                    Tiền thực thu: <strong className="text-slate-900 block sm:inline">{Number(invoice.actual_collected_amount).toLocaleString('vi-VN')} đ</strong>
+                  </div>
+                  <div className="p-2.5 bg-white/70 rounded-xl">
+                    Chênh lệch thu lố: <strong className="text-red-600 block sm:inline">+{Number(invoice.diff_amount).toLocaleString('vi-VN')} đ</strong>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -270,7 +315,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
             )}
           </div>
 
-          <div className="p-6 sm:p-8 space-y-8">
+          <div className="p-4 sm:p-8 space-y-6 sm:space-y-8">
             {/* METER READINGS SECTION */}
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
               <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 mb-3 flex items-center gap-1.5">
@@ -333,29 +378,29 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
 
               {/* Progressive Tiers Table */}
               {elecBreakdown.tiers && elecBreakdown.tiers.length > 0 && (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
+                <div className="overflow-x-auto scrollbar-thin pb-2 rounded-xl border border-slate-100">
+                  <table className="w-full min-w-[500px] text-left text-xs">
                     <thead>
-                      <tr className="border-b border-slate-200 text-slate-400 font-semibold uppercase text-[10px] tracking-wider">
-                        <th className="py-2 px-2">Bậc</th>
-                        <th className="py-2 px-2">Khung kWh</th>
-                        <th className="py-2 px-2">Sản lượng</th>
-                        <th className="py-2 px-2">Đơn giá (đ/kWh)</th>
-                        <th className="py-2 px-2 text-right">Thành tiền</th>
+                      <tr className="border-b border-slate-200 text-slate-400 font-semibold uppercase text-[10px] tracking-wider bg-slate-50/50">
+                        <th className="py-2.5 px-3 whitespace-nowrap">Bậc</th>
+                        <th className="py-2.5 px-3 whitespace-nowrap">Khung kWh</th>
+                        <th className="py-2.5 px-3 whitespace-nowrap">Sản lượng</th>
+                        <th className="py-2.5 px-3 whitespace-nowrap">Đơn giá (đ/kWh)</th>
+                        <th className="py-2.5 px-3 text-right whitespace-nowrap">Thành tiền</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {elecBreakdown.tiers.map((tier) => (
                         <tr key={tier.tier_number} className="hover:bg-slate-50">
-                          <td className="py-2 px-2 font-bold text-slate-800">Bậc {tier.tier_number}</td>
-                          <td className="py-2 px-2 text-slate-600">
+                          <td className="py-2.5 px-3 font-bold text-slate-800 whitespace-nowrap">Bậc {tier.tier_number}</td>
+                          <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
                             {tier.threshold_applied ? `Tối đa ${tier.threshold_applied} kWh` : 'Còn lại'}
                           </td>
-                          <td className="py-2 px-2 font-bold text-slate-900">{tier.kwh_used} kWh</td>
-                          <td className="py-2 px-2 text-slate-600">
+                          <td className="py-2.5 px-3 font-bold text-slate-900 whitespace-nowrap">{tier.kwh_used} kWh</td>
+                          <td className="py-2.5 px-3 text-slate-600 whitespace-nowrap">
                             {Number(tier.unit_price).toLocaleString('vi-VN')} đ
                           </td>
-                          <td className="py-2 px-2 font-bold text-slate-900 text-right">
+                          <td className="py-2.5 px-3 font-bold text-slate-900 text-right whitespace-nowrap">
                             {Number(tier.amount).toLocaleString('vi-VN')} đ
                           </td>
                         </tr>
@@ -366,7 +411,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
               )}
 
               {/* Electricity Summary Footer */}
-              <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80 flex items-center justify-between text-xs">
+              <div className="bg-amber-50/60 p-4 rounded-2xl border border-amber-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
                 <div>
                   <span className="text-amber-800">Thuế GTGT (8%): </span>
                   <strong className="text-slate-900">
@@ -402,26 +447,26 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
               </div>
 
               {/* Water Summary Footer */}
-              <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-200/80 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-200/80 grid grid-cols-2 sm:flex sm:flex-wrap items-center justify-between gap-3 text-xs">
                 <div>
                   <span className="text-blue-800">Tiền nước: </span>
-                  <strong className="text-slate-900">
+                  <strong className="text-slate-900 block sm:inline">
                     {Number(waterBreakdown.pre_tax_amount || 0).toLocaleString('vi-VN')} đ
                   </strong>
                 </div>
                 <div>
                   <span className="text-blue-800">VAT (5%): </span>
-                  <strong className="text-slate-900">
+                  <strong className="text-slate-900 block sm:inline">
                     {Number(waterBreakdown.vat_amount || 0).toLocaleString('vi-VN')} đ
                   </strong>
                 </div>
                 <div>
                   <span className="text-blue-800">Phí BVMT (10%): </span>
-                  <strong className="text-slate-900">
+                  <strong className="text-slate-900 block sm:inline">
                     {Number(waterBreakdown.env_fee_amount || 0).toLocaleString('vi-VN')} đ
                   </strong>
                 </div>
-                <div className="text-sm font-black text-blue-950">
+                <div className="col-span-2 sm:col-span-1 pt-2 sm:pt-0 border-t sm:border-t-0 border-blue-200/60 text-sm font-black text-blue-950">
                   <span>Tổng tiền nước: </span>
                   <span>{Number(invoice.water_amount).toLocaleString('vi-VN')} đ</span>
                 </div>
@@ -458,7 +503,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
                   <p className="font-bold text-slate-900 uppercase">Người lập hóa đơn</p>
                   <p className="text-[11px] text-slate-500 italic">(Ký và ghi rõ họ tên)</p>
                 </div>
-                <p className="text-slate-400 italic">....................................................</p>
+                <div className="w-full max-w-[140px] sm:max-w-[180px] mx-auto border-b border-dashed border-slate-300 h-0 my-2" />
               </div>
 
               <div className="space-y-16">
@@ -466,7 +511,7 @@ export default function PublicInvoiceView({ initialToken = '', onBackToHome }) {
                   <p className="font-bold text-slate-900 uppercase">Người thuê xác nhận</p>
                   <p className="text-[11px] text-slate-500 italic">(Ký và ghi rõ họ tên)</p>
                 </div>
-                <p className="text-slate-400 italic">....................................................</p>
+                <div className="w-full max-w-[140px] sm:max-w-[180px] mx-auto border-b border-dashed border-slate-300 h-0 my-2" />
               </div>
             </div>
 

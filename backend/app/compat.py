@@ -540,7 +540,18 @@ if not SQLMODEL_INSTALLED:
     def _instantiate_model(model_cls: Type[SQLModel], row: sqlite3.Row) -> Any:
         d = {}
         for k in row.keys():
-            d[k] = _deserialize_val(model_cls, k, row[k])
+            val = _deserialize_val(model_cls, k, row[k])
+            if val is None:
+                field_info = model_cls.model_fields.get(k)
+                if field_info is not None:
+                    ann = field_info.annotation
+                    origin = get_origin(ann)
+                    is_union = origin is Union or (hasattr(types, "UnionType") and origin is types.UnionType)
+                    accepts_none = is_union and type(None) in get_args(ann)
+                    # If field does not accept None or defines a non-None default, omit None so model defaults apply
+                    if not accepts_none or (field_info.default is not None and str(field_info.default) != "PydanticUndefined"):
+                        continue
+            d[k] = val
         return model_cls(**d)
 
     # Register virtual sqlmodel module in sys.modules so standard imports work everywhere
