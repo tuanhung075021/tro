@@ -23,8 +23,10 @@ import {
   FileClock,
   KeyRound,
   ChevronDown,
+  Trash2,
 } from 'lucide-react';
 import ChangePasswordModal from './ChangePasswordModal';
+import DeleteAccountModal from './DeleteAccountModal';
 
 export default function Navbar({
   currentView,
@@ -40,6 +42,7 @@ export default function Navbar({
   const dropdownRef = useRef(null);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const userDropdownRef = useRef(null);
 
   // Storage key: tro_notif_read_${user.id} -> { read_ids: string[], markAllReadTs: number }
@@ -460,6 +463,21 @@ export default function Navbar({
                         <LogOut className="w-4 h-4 text-slate-400" />
                         <span>Đăng xuất</span>
                       </button>
+
+                      <div className="h-px bg-slate-100 my-1" />
+
+                      {/* Button: Xóa tài khoản */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUserDropdown(false);
+                          setShowDeleteAccountModal(true);
+                        }}
+                        className="w-full min-h-[44px] flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-xl transition-colors text-left"
+                      >
+                        <Trash2 className="w-4 h-4 text-rose-500" />
+                        <span>Xóa tài khoản</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -483,6 +501,17 @@ export default function Navbar({
       <ChangePasswordModal
         isOpen={showChangePasswordModal}
         onClose={() => setShowChangePasswordModal(false)}
+      />
+
+      {/* Delete Account Modal */}
+      <DeleteAccountModal
+        isOpen={showDeleteAccountModal}
+        onClose={() => setShowDeleteAccountModal(false)}
+        user={user}
+        onAccountDeleted={() => {
+          logout();
+          window.location.href = '/';
+        }}
       />
     </header>
   );

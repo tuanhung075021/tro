@@ -18,8 +18,26 @@ from .compat import (
     status,
 )
 from .database import get_session, hash_admin_secret
-from .models import AdminApprovalRequest, AdminSecretKey, Property, Room, User
-from .schemas import ChangePasswordIn, RoomOut, TokenResponse, UserLogin, UserOut, UserRegister
+from .models import (
+    AdminApprovalRequest,
+    AdminSecretKey,
+    Invoice,
+    MeterReading,
+    Property,
+    Room,
+    TariffChangeLog,
+    User,
+    generate_invite_code,
+)
+from .schemas import (
+    ChangePasswordIn,
+    DeleteAccountIn,
+    RoomOut,
+    TokenResponse,
+    UserLogin,
+    UserOut,
+    UserRegister,
+)
 from .security import (
     create_access_token,
     decode_access_token,
@@ -462,3 +480,145 @@ def remove_tenant_from_room(
         landlord_name=landlord_name,
         landlord_phone=landlord_phone,
     )
+
+
+@router.delete("/account")
+@router.post("/delete-account")
+def delete_account(
+    payload: DeleteAccountIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+) -> dict:
+    """Permanently delete an authenticated user account with password verification and database integrity safeguards.
+
+    Safety measures & cascade behavior:
+    1. Authenticate user password.
+    2. Root Admin check: Disallow deleting the sole Root Admin in the system.
+    3. Admin audit transfer: Reassign TariffChangeLog records to the remaining Root Admin.
+    4. Landlord cascade: Block deletion if active tenants exist. Cascade delete properties, rooms,
+       readings, and invoices if all rooms are vacant.
+    5. Tenant room release: Vacate all occupied rooms and regenerate invite codes.
+    6. Admin requests cleanup: Remove own requests and reassign reviewed requests.
+    7. Hard delete user record and commit.
+    """
+    if not verify_password(payload.password, current_user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mật khẩu xác nhận không chính xác",
+        )
+
+    # 1. Protection for Root Admin
+    target_root_admin: Optional[User] = None
+    if current_user.is_root_admin:
+        all_root_admins = session.exec(
+            select(User).where(User.role == "root_admin")
+        ).all()
+        other_root_admins = [u for u in all_root_admins if u.id != current_user.id]
+        if not other_root_admins:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Không thể xóa tài khoản Root Admin duy nhất của hệ thống",
+            )
+        target_root_admin = other_root_admins[0]
+    else:
+        target_root_admin = session.exec(
+            select(User).where(User.role == "root_admin", User.id != current_user.id)
+        ).first()
+
+    # 2. Reassign TariffChangeLog for Admin / Root Admin to preserve audit trails
+    if current_user.is_admin:
+        change_logs = session.exec(
+            select(TariffChangeLog).where(TariffChangeLog.changed_by_id == current_user.id)
+        ).all()
+        if change_logs:
+            if not target_root_admin:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Không tìm thấy Root Admin kế nhiệm để tiếp nhận nhật ký kiểm toán biểu giá",
+                )
+            for log in change_logs:
+                log.changed_by_id = target_root_admin.id
+                log.note = f"[Chuyển giao từ @{current_user.username}] {log.note or ''}".strip()
+                session.add(log)
+
+    # 3. Handle Landlord properties & rooms
+    user_properties = session.exec(
+        select(Property).where(Property.landlord_id == current_user.id)
+    ).all()
+    if user_properties:
+        prop_ids = [p.id for p in user_properties if p.id is not None]
+        if prop_ids:
+            all_rooms = session.exec(
+                select(Room).where(Room.property_id.in_(prop_ids))
+            ).all()
+            # Check if any room has an active tenant
+            active_tenants = [r for r in all_rooms if r.tenant_id is not None]
+            if active_tenants:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Không thể xóa tài khoản: Vẫn còn {len(active_tenants)} phòng đang có người thuê. "
+                        "Vui lòng trả phòng cho tất cả người thuê trước khi xóa tài khoản."
+                    ),
+                )
+            room_ids = [r.id for r in all_rooms if r.id is not None]
+            if room_ids:
+                # Delete Invoices belonging to these rooms
+                invoices = session.exec(
+                    select(Invoice).where(Invoice.room_id.in_(room_ids))
+                ).all()
+                for inv in invoices:
+                    session.delete(inv)
+
+                # Delete MeterReadings belonging to these rooms
+                readings = session.exec(
+                    select(MeterReading).where(MeterReading.room_id.in_(room_ids))
+                ).all()
+                for mr in readings:
+                    session.delete(mr)
+
+                # Delete Rooms
+                for r in all_rooms:
+                    session.delete(r)
+
+            # Delete Properties
+            for p in user_properties:
+                session.delete(p)
+
+    # 4. Handle Tenant room assignments
+    tenant_rooms = session.exec(
+        select(Room).where(Room.tenant_id == current_user.id)
+    ).all()
+    for tr in tenant_rooms:
+        tr.remove_tenant()
+        session.add(tr)
+
+    # 5. Handle AdminApprovalRequest references
+    # Requests created by this user
+    user_requests = session.exec(
+        select(AdminApprovalRequest).where(AdminApprovalRequest.user_id == current_user.id)
+    ).all()
+    for req in user_requests:
+        session.delete(req)
+
+    # Requests reviewed by this user
+    reviewed_requests = session.exec(
+        select(AdminApprovalRequest).where(AdminApprovalRequest.reviewed_by_id == current_user.id)
+    ).all()
+    for req in reviewed_requests:
+        req.reviewed_by_id = target_root_admin.id if target_root_admin else None
+        session.add(req)
+
+    # AdminSecretKeys created by this user
+    created_keys = session.exec(
+        select(AdminSecretKey).where(AdminSecretKey.created_by_id == current_user.id)
+    ).all()
+    for sk in created_keys:
+        sk.created_by_id = target_root_admin.id if target_root_admin else None
+        session.add(sk)
+
+    # 6. Delete the user
+    session.delete(current_user)
+    session.commit()
+
+    return {"message": "Tài khoản của bạn đã được xóa thành công"}

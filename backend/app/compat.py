@@ -362,16 +362,7 @@ if not SQLMODEL_INSTALLED:
         def commit(self) -> None:
             cursor = self.conn.cursor()
 
-            # Handle deletes
-            for obj in self._deleted_objects:
-                tablename = obj.__tablename__
-                pk_col = _get_primary_key(obj.__class__)
-                pk_val = getattr(obj, pk_col, None)
-                if pk_val is not None:
-                    cursor.execute(f'DELETE FROM "{tablename}" WHERE "{pk_col}" = ?', (pk_val,))
-            self._deleted_objects.clear()
-
-            # Handle adds / updates
+            # Handle adds / updates first (so foreign key updates/unlinks are applied before deletes)
             for obj in self._new_objects:
                 if obj in self._deleted_objects:
                     continue
@@ -413,6 +404,16 @@ if not SQLMODEL_INSTALLED:
                         setattr(obj, pk_col, cursor.lastrowid)
 
             self._new_objects.clear()
+
+            # Handle deletes
+            for obj in self._deleted_objects:
+                tablename = obj.__tablename__
+                pk_col = _get_primary_key(obj.__class__)
+                pk_val = getattr(obj, pk_col, None)
+                if pk_val is not None:
+                    cursor.execute(f'DELETE FROM "{tablename}" WHERE "{pk_col}" = ?', (pk_val,))
+            self._deleted_objects.clear()
+
             self.conn.commit()
 
         def rollback(self) -> None:

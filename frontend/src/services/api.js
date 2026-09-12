@@ -144,6 +144,12 @@ export const auth = {
       body: JSON.stringify(data),
     }),
 
+  deleteAccount: (data) =>
+    request('/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify(data),
+    }),
+
   removeTenant: (roomId) =>
     request(`/auth/rooms/${roomId}/remove-tenant`, {
       method: 'POST',

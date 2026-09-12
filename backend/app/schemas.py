@@ -451,3 +451,8 @@ class AdminUserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class DeleteAccountIn(BaseModel):
+    """Schema for account deletion confirmation requiring password verification."""
+    password: str = Field(..., min_length=1, description="Mật khẩu tài khoản để xác nhận xóa")
+
+
