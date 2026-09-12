@@ -30,6 +30,7 @@ import {
   ArrowUpRight,
   UserCheck,
   UserX,
+  UserMinus,
   Calendar,
   Phone,
   User,
