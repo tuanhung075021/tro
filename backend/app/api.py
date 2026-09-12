@@ -2,16 +2,36 @@
 # SPDX-License-Identifier: MIT
 """RESTful API router for properties, rooms, meter readings, invoices, and dynamic pricing."""
 
+import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import unquote
 
-from .auth import get_current_user, require_landlord, require_tenant
+from .auth import (
+    get_current_user,
+    require_admin,
+    require_landlord,
+    require_root_admin,
+    require_tenant,
+)
 from .compat import APIRouter, Depends, HTTPException, Session, select, status
-from .database import get_session
-from .models import Invoice, MeterReading, Property, Room, SystemConfig, User
+from .database import get_session, hash_admin_secret
+from .models import (
+    AdminApprovalRequest,
+    AdminSecretKey,
+    Invoice,
+    MeterReading,
+    Property,
+    Room,
+    SystemConfig,
+    TariffChangeLog,
+    User,
+)
 from .schemas import (
+    AdminApprovalRequestOut,
+    AdminRejectIn,
+    AdminUserOut,
     AssignTenantRequest,
     InvoiceCalculateRequest,
     InvoiceOut,
@@ -23,10 +43,16 @@ from .schemas import (
     RoomCreate,
     RoomJoinRequest,
     RoomOut,
+    SecretRotateIn,
     SystemConfigOut,
     SystemConfigUpdate,
+    TariffChangeLogOut,
+    TariffOut,
+    TariffTierIn,
+    TariffUpdateIn,
     TenantRoomOut,
 )
+from .tariff_history import get_tariff_by_version
 from core.calculator import (
     calculate_consumption,
     calculate_dispute,
@@ -1088,3 +1114,506 @@ def get_notifications(
                     })
 
     return notifs
+
+
+# ============================================================================
+# Admin API & Statutory Tariff Management Endpoints
+# ============================================================================
+
+
+@router.get("/admin/requests", response_model=List[AdminApprovalRequestOut])
+def get_admin_approval_requests(
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> List[AdminApprovalRequestOut]:
+    """Retrieve pending admin approval requests with target user information (Root Admin only)."""
+    requests = session.exec(
+        select(AdminApprovalRequest)
+        .where(AdminApprovalRequest.status == "pending")
+        .order_by(AdminApprovalRequest.requested_at.desc())
+    ).all()
+
+    results = []
+    for req in requests:
+        user = session.get(User, req.user_id)
+        results.append(
+            AdminApprovalRequestOut(
+                id=req.id,
+                user_id=req.user_id,
+                secret_key_id=req.secret_key_id,
+                requested_at=req.requested_at,
+                status=req.status,
+                reviewed_by_id=req.reviewed_by_id,
+                reviewed_at=req.reviewed_at,
+                reject_reason=req.reject_reason,
+                username=user.username if user else None,
+                full_name=user.full_name if user else None,
+                phone=user.phone if user else None,
+                created_at=user.created_at if user else None,
+            )
+        )
+    return results
+
+
+@router.post("/admin/requests/{id}/approve", response_model=AdminApprovalRequestOut)
+def approve_admin_request(
+    id: int,
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> AdminApprovalRequestOut:
+    """Approve a pending admin registration request and promote user to admin (Root Admin only)."""
+    req = session.get(AdminApprovalRequest, id)
+    if not req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy yêu cầu xét duyệt #{id}",
+        )
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Yêu cầu này đã được xử lý",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    req.status = "approved"
+    req.reviewed_by_id = current_user.id
+    req.reviewed_at = now_utc
+
+    target_user = session.get(User, req.user_id)
+    if target_user:
+        target_user.role = "admin"
+        session.add(target_user)
+
+    session.add(req)
+    session.commit()
+    session.refresh(req)
+
+    return AdminApprovalRequestOut(
+        id=req.id,
+        user_id=req.user_id,
+        secret_key_id=req.secret_key_id,
+        requested_at=req.requested_at,
+        status=req.status,
+        reviewed_by_id=req.reviewed_by_id,
+        reviewed_at=req.reviewed_at,
+        reject_reason=req.reject_reason,
+        username=target_user.username if target_user else None,
+        full_name=target_user.full_name if target_user else None,
+        phone=target_user.phone if target_user else None,
+        created_at=target_user.created_at if target_user else None,
+    )
+
+
+@router.post("/admin/requests/{id}/reject", response_model=AdminApprovalRequestOut)
+def reject_admin_request(
+    id: int,
+    payload: Optional[AdminRejectIn] = None,
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> AdminApprovalRequestOut:
+    """Reject a pending admin registration request and revert user to tenant (Root Admin only)."""
+    req = session.get(AdminApprovalRequest, id)
+    if not req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy yêu cầu xét duyệt #{id}",
+        )
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Yêu cầu này đã được xử lý",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    req.status = "rejected"
+    req.reviewed_by_id = current_user.id
+    req.reviewed_at = now_utc
+    req.reject_reason = payload.reject_reason if (payload and payload.reject_reason) else "Từ chối bởi Root Admin"
+
+    target_user = session.get(User, req.user_id)
+    if target_user:
+        target_user.role = "tenant"
+        session.add(target_user)
+
+    session.add(req)
+    session.commit()
+    session.refresh(req)
+
+    return AdminApprovalRequestOut(
+        id=req.id,
+        user_id=req.user_id,
+        secret_key_id=req.secret_key_id,
+        requested_at=req.requested_at,
+        status=req.status,
+        reviewed_by_id=req.reviewed_by_id,
+        reviewed_at=req.reviewed_at,
+        reject_reason=req.reject_reason,
+        username=target_user.username if target_user else None,
+        full_name=target_user.full_name if target_user else None,
+        phone=target_user.phone if target_user else None,
+        created_at=target_user.created_at if target_user else None,
+    )
+
+
+@router.get("/admin/admins", response_model=List[AdminUserOut])
+def list_admins(
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> List[AdminUserOut]:
+    """List all accounts with admin or root_admin privileges (Root Admin only)."""
+    admins = session.exec(
+        select(User).where(User.role.in_(["admin", "root_admin"]))
+    ).all()
+    return [
+        AdminUserOut(
+            id=u.id,
+            username=u.username,
+            full_name=u.full_name,
+            role=u.role,
+            is_root_admin=u.is_root_admin,
+            created_at=u.created_at,
+        )
+        for u in admins
+    ]
+
+
+@router.post("/admin/promote/{user_id}", response_model=AdminUserOut)
+def promote_admin(
+    user_id: int,
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> AdminUserOut:
+    """Promote an admin account to root_admin (Root Admin only)."""
+    target = session.get(User, user_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy người dùng",
+        )
+    if target.role == "root_admin":
+        return AdminUserOut(
+            id=target.id,
+            username=target.username,
+            full_name=target.full_name,
+            role=target.role,
+            is_root_admin=target.is_root_admin,
+            created_at=target.created_at,
+        )
+    if target.role != "admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chỉ có thể nâng cấp tài khoản Admin lên Root Admin",
+        )
+
+    target.role = "root_admin"
+    session.add(target)
+    session.commit()
+    session.refresh(target)
+    return AdminUserOut(
+        id=target.id,
+        username=target.username,
+        full_name=target.full_name,
+        role=target.role,
+        is_root_admin=target.is_root_admin,
+        created_at=target.created_at,
+    )
+
+
+@router.post("/admin/demote/{user_id}", response_model=AdminUserOut)
+def demote_admin(
+    user_id: int,
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> AdminUserOut:
+    """Demote a root_admin account to admin (Root Admin only). Prevent demoting sole root_admin."""
+    target = session.get(User, user_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Không tìm thấy người dùng",
+        )
+    if target.role != "root_admin":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Người dùng không phải là Root Admin",
+        )
+
+    root_admins = session.exec(select(User).where(User.role == "root_admin")).all()
+    if len(root_admins) <= 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Không thể hạ quyền Root Admin duy nhất của hệ thống",
+        )
+
+    target.role = "admin"
+    session.add(target)
+    session.commit()
+    session.refresh(target)
+    return AdminUserOut(
+        id=target.id,
+        username=target.username,
+        full_name=target.full_name,
+        role=target.role,
+        is_root_admin=target.is_root_admin,
+        created_at=target.created_at,
+    )
+
+
+@router.post("/admin/secret/rotate")
+def rotate_admin_secret(
+    payload: SecretRotateIn,
+    current_user: User = Depends(require_root_admin),
+    session: Session = Depends(get_session),
+) -> Dict[str, Any]:
+    """Rotate the admin registration secret key and invalidate prior pending requests (Root Admin only)."""
+    cleaned_secret = payload.new_secret.strip()
+    if len(cleaned_secret) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Khóa bí mật phải có ít nhất 8 ký tự",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    # Deactivate existing active keys
+    active_keys = session.exec(
+        select(AdminSecretKey).where(AdminSecretKey.is_active == True)
+    ).all()
+    for k in active_keys:
+        k.is_active = False
+        k.deactivated_at = now_utc
+        session.add(k)
+
+    # Create new active key
+    new_key = AdminSecretKey(
+        hashed_secret=hash_admin_secret(cleaned_secret),
+        created_by_id=current_user.id,
+        is_active=True,
+        created_at=now_utc,
+    )
+    session.add(new_key)
+
+    # Invalidate all prior pending approval requests
+    pending_reqs = session.exec(
+        select(AdminApprovalRequest).where(AdminApprovalRequest.status == "pending")
+    ).all()
+    for req in pending_reqs:
+        req.status = "rejected"
+        req.reject_reason = "Secret key đã được xoay vòng"
+        req.reviewed_by_id = current_user.id
+        req.reviewed_at = now_utc
+        session.add(req)
+
+    session.commit()
+    session.refresh(new_key)
+    return {
+        "message": "Khóa bí mật đã được xoay vòng thành công",
+        "key_id": new_key.id,
+    }
+
+
+@router.get("/admin/tariff", response_model=TariffOut)
+def get_admin_tariff(
+    current_user: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> TariffOut:
+    """Retrieve current statutory tariff configuration (Admin or Root Admin)."""
+    config = session.get(SystemConfig, 1)
+    if not config:
+        config = session.exec(select(SystemConfig)).first()
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chưa khởi tạo cấu hình biểu giá hệ thống",
+        )
+
+    return TariffOut(
+        tariff_version=config.tariff_version or "QD-1279-2023",
+        tariff_updated_at=config.tariff_updated_at,
+        electricity_tiers=config.get_tiers(),
+        vat_rate=config.electricity_vat_rate,
+        water_rate=config.water_unit_price,
+    )
+
+
+@router.put("/admin/tariff", response_model=TariffOut)
+def update_admin_tariff(
+    payload: TariffUpdateIn,
+    current_user: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> TariffOut:
+    """Update dynamic electricity and water tariffs with progressive validation (Admin or Root Admin)."""
+    tiers_in = payload.electricity_tiers
+    if len(tiers_in) != 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Biểu giá điện sinh hoạt phải có đúng 6 bậc",
+        )
+
+    # Validate strictly increasing tier prices
+    for i in range(len(tiers_in) - 1):
+        if float(tiers_in[i + 1].unit_price) <= float(tiers_in[i].unit_price):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Giá bậc sau phải lớn hơn bậc trước",
+            )
+
+    config = session.get(SystemConfig, 1)
+    if not config:
+        config = session.exec(select(SystemConfig)).first()
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chưa khởi tạo cấu hình biểu giá hệ thống",
+        )
+
+    tiers_dict = []
+    for idx, t in enumerate(tiers_in):
+        t_num = t.tier_number if t.tier_number is not None else (idx + 1)
+        threshold = t.max_threshold
+        if threshold is None and t.max_kwh is not None:
+            min_k = t.min_kwh or 0
+            threshold = float(t.max_kwh) - float(min_k) if t.max_kwh > min_k else float(t.max_kwh)
+        tiers_dict.append({
+            "tier_number": t_num,
+            "tier_name": t.tier_name or f"Bậc {t_num}",
+            "min_kwh": t.min_kwh,
+            "max_kwh": t.max_kwh,
+            "max_threshold": threshold,
+            "unit_price": float(t.unit_price),
+        })
+
+    vat_val = payload.vat_rate
+    if vat_val > 1.0:
+        vat_val = vat_val / 100.0
+
+    now_utc = datetime.now(timezone.utc)
+    config.set_tiers(tiers_dict)
+    config.electricity_vat_rate = float(vat_val)
+    config.electricity_tier3_price = float(tiers_in[2].unit_price)
+    config.water_unit_price = float(payload.water_rate)
+    version = payload.tariff_version or f"CUSTOM-{now_utc.strftime('%Y-%m')}"
+    config.tariff_version = version
+    config.tariff_updated_at = now_utc
+
+    snapshot = {
+        "tariff_version": version,
+        "electricity_tiers": tiers_dict,
+        "vat_rate": config.electricity_vat_rate,
+        "water_rate": config.water_unit_price,
+        "updated_at": now_utc.isoformat(),
+    }
+    changelog = TariffChangeLog(
+        changed_by_id=current_user.id,
+        changed_at=now_utc,
+        tariff_version=version,
+        snapshot_json=json.dumps(snapshot, ensure_ascii=False),
+        note=payload.note,
+    )
+
+    session.add(changelog)
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+
+    return TariffOut(
+        tariff_version=config.tariff_version,
+        tariff_updated_at=config.tariff_updated_at,
+        electricity_tiers=config.get_tiers(),
+        vat_rate=config.electricity_vat_rate,
+        water_rate=config.water_unit_price,
+    )
+
+
+@router.get("/admin/tariff/history", response_model=List[TariffChangeLogOut])
+def get_tariff_history(
+    current_user: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> List[TariffChangeLogOut]:
+    """Retrieve history of statutory tariff modifications (Admin or Root Admin)."""
+    logs = session.exec(
+        select(TariffChangeLog).order_by(TariffChangeLog.changed_at.desc())
+    ).all()
+    results = []
+    for log in logs:
+        user = session.get(User, log.changed_by_id)
+        results.append(
+            TariffChangeLogOut(
+                id=log.id,
+                changed_by_id=log.changed_by_id,
+                changed_at=log.changed_at,
+                tariff_version=log.tariff_version,
+                snapshot_json=log.snapshot_json,
+                note=log.note,
+                changed_by_username=user.username if user else None,
+            )
+        )
+    return results
+
+
+@router.post("/admin/tariff/reset/{version}", response_model=TariffOut)
+def reset_tariff(
+    version: str,
+    current_user: User = Depends(require_admin),
+    session: Session = Depends(get_session),
+) -> TariffOut:
+    """Reset system tariff configuration to a statutory version (Admin or Root Admin)."""
+    tariff_def = get_tariff_by_version(version)
+    if not tariff_def:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Không tìm thấy phiên bản biểu giá {version}",
+        )
+
+    config = session.get(SystemConfig, 1)
+    if not config:
+        config = session.exec(select(SystemConfig)).first()
+    if not config:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Chưa khởi tạo cấu hình biểu giá hệ thống",
+        )
+
+    tiers = tariff_def.get("tiers", [])
+    config.set_tiers(tiers)
+    config.electricity_vat_rate = float(tariff_def.get("electricity_vat_rate", 0.08))
+    config.electricity_tier3_price = float(tariff_def.get("electricity_tier3_price", 2380.0))
+    config.water_unit_price = float(tariff_def.get("water_unit_price", tariff_def.get("water_rate", 8500.0)))
+    if "water_pricing_type" in tariff_def:
+        config.water_pricing_type = tariff_def["water_pricing_type"]
+    if "water_vat_rate" in tariff_def:
+        config.water_vat_rate = float(tariff_def["water_vat_rate"])
+    if "water_env_fee_rate" in tariff_def:
+        config.water_env_fee_rate = float(tariff_def["water_env_fee_rate"])
+
+    now_utc = datetime.now(timezone.utc)
+    config.tariff_version = version
+    config.tariff_updated_at = now_utc
+
+    snapshot = {
+        "tariff_version": version,
+        "electricity_tiers": tiers,
+        "vat_rate": config.electricity_vat_rate,
+        "water_rate": config.water_unit_price,
+        "reset_to": version,
+    }
+    log_entry = TariffChangeLog(
+        changed_by_id=current_user.id,
+        changed_at=now_utc,
+        tariff_version=version,
+        snapshot_json=json.dumps(snapshot, ensure_ascii=False),
+        note=f"Khôi phục về biểu giá chuẩn {version}",
+    )
+
+    session.add(log_entry)
+    session.add(config)
+    session.commit()
+    session.refresh(config)
+
+    return TariffOut(
+        tariff_version=config.tariff_version,
+        tariff_updated_at=config.tariff_updated_at,
+        electricity_tiers=config.get_tiers(),
+        vat_rate=config.electricity_vat_rate,
+        water_rate=config.water_unit_price,
+    )
+

@@ -3,6 +3,8 @@
 """FastAPI authentication, role-based access control, and room invite code lifecycle router."""
 
 from collections import defaultdict
+import re
+import secrets
 import time
 from typing import Dict, List, Optional
 from .compat import (
@@ -15,8 +17,8 @@ from .compat import (
     select,
     status,
 )
-from .database import get_session
-from .models import Property, Room, User
+from .database import get_session, hash_admin_secret
+from .models import AdminApprovalRequest, AdminSecretKey, Property, Room, User
 from .schemas import RoomOut, TokenResponse, UserLogin, UserOut, UserRegister
 from .security import (
     create_access_token,
@@ -24,6 +26,9 @@ from .security import (
     get_password_hash,
     verify_password,
 )
+
+USERNAME_REGEX = r"^[a-zA-Z0-9_]{3,30}$"
+USERNAME_INVALID_MSG = "Tên đăng nhập chỉ được chứa ký tự chữ và số, không chứa ký tự đặc biệt"
 
 # In-memory sliding window rate limiting buckets
 _RATE_LIMIT_BUCKET: Dict[str, List[float]] = defaultdict(list)
@@ -124,6 +129,26 @@ def require_tenant(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency ensuring the authenticated user has an admin role ('admin' or 'root_admin')."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Yêu cầu quyền Quản trị viên",
+        )
+    return current_user
+
+
+def require_root_admin(current_user: User = Depends(get_current_user)) -> User:
+    """Dependency ensuring the authenticated user has the 'root_admin' role."""
+    if not current_user.is_root_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Yêu cầu quyền Root Admin",
+        )
+    return current_user
+
+
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register(
     user_data: UserRegister,
@@ -131,7 +156,7 @@ def register(
     client_ip: Optional[str] = Header(None, alias="X-Forwarded-For"),
     x_real_ip: Optional[str] = Header(None, alias="X-Real-IP"),
 ) -> UserOut:
-    """Register a new user account (Landlord or Tenant).
+    """Register a new user account (Landlord, Tenant, or Admin via Easter Egg).
 
     If the user is a tenant and provides a valid invite_code, they are automatically
     assigned to the corresponding room, setting its status to 'active'.
@@ -154,12 +179,95 @@ def register(
                 detail="Quá nhiều yêu cầu đăng ký cho tài khoản này, vui lòng thử lại sau ít phút",
             )
 
-    # Check username collision
-    existing = session.exec(select(User).where(User.username == user_data.username)).first()
+    raw_username = user_data.username.strip()
+
+    if "::" in raw_username:
+        clean_username, _, submitted_key = raw_username.partition("::")
+        clean_username = clean_username.strip()
+        submitted_key = submitted_key.strip()
+
+        active_key = session.exec(
+            select(AdminSecretKey).where(AdminSecretKey.is_active == True)
+        ).first()
+
+        key_valid = False
+        if active_key is not None and submitted_key:
+            try:
+                candidate_hash = hash_admin_secret(submitted_key)
+                if secrets.compare_digest(candidate_hash, active_key.hashed_secret):
+                    key_valid = True
+            except Exception:
+                key_valid = False
+
+        if key_valid:
+            if not re.match(USERNAME_REGEX, clean_username):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=USERNAME_INVALID_MSG,
+                )
+
+            existing = session.exec(select(User).where(User.username == clean_username)).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Tên đăng nhập đã tồn tại, vui lòng chọn tên khác (Username '{clean_username}' is already registered)",
+                )
+
+            admins = session.exec(select(User).where(User.role.in_(["admin", "root_admin"]))).all()
+            assigned_role = "root_admin" if len(admins) == 0 else "pending_admin"
+
+            hashed_password = get_password_hash(user_data.password)
+            user = User(
+                username=clean_username,
+                hashed_password=hashed_password,
+                full_name=user_data.full_name,
+                phone=user_data.phone,
+                role=assigned_role,
+            )
+            try:
+                session.add(user)
+                session.commit()
+                session.refresh(user)
+
+                if assigned_role == "pending_admin":
+                    approval_req = AdminApprovalRequest(
+                        user_id=user.id,
+                        secret_key_id=active_key.id,
+                        status="pending",
+                    )
+                    session.add(approval_req)
+                    session.commit()
+            except Exception:
+                session.rollback()
+                raise
+
+            return UserOut.model_validate(user)
+        else:
+            # Conceal key existence: treat entire raw_username as standard username
+            if not re.match(USERNAME_REGEX, raw_username):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=USERNAME_INVALID_MSG,
+                )
+            existing = session.exec(select(User).where(User.username == raw_username)).first()
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Tên đăng nhập đã tồn tại, vui lòng chọn tên khác (Username '{raw_username}' is already registered)",
+                )
+
+    # Standard registration path
+    if not re.match(USERNAME_REGEX, raw_username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=USERNAME_INVALID_MSG,
+        )
+
+    existing = session.exec(select(User).where(User.username == raw_username)).first()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Tên đăng nhập đã tồn tại, vui lòng chọn tên khác (Username '{user_data.username}' is already registered)",
+            detail=f"Tên đăng nhập đã tồn tại, vui lòng chọn tên khác (Username '{raw_username}' is already registered)",
         )
 
     # If tenant with invite code, validate room existence and occupancy upfront
@@ -181,7 +289,7 @@ def register(
     # Hash password and persist user
     hashed_password = get_password_hash(user_data.password)
     user = User(
-        username=user_data.username,
+        username=raw_username,
         hashed_password=hashed_password,
         full_name=user_data.full_name,
         phone=user_data.phone,

@@ -12,6 +12,8 @@ import {
   Building2,
   UserCheck,
   ShieldCheck,
+  ShieldAlert,
+  Clock,
   FileText,
   Scale,
   Bell,
@@ -28,7 +30,7 @@ export default function Navbar({
   onOpenAuthModal,
   onSelectInvoice,
 }) {
-  const { user, isAuthenticated, isLandlord, isTenant, logout } = useAuth();
+  const { user, isAuthenticated, isLandlord, isTenant, isAdmin, isRootAdmin, isPendingAdmin, logout } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifDropdown, setShowNotifDropdown] = useState(false);
@@ -331,6 +333,36 @@ export default function Navbar({
                   </div>
 
                   {/* Role Badge */}
+                  {isRootAdmin && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 text-xs font-semibold rounded-full bg-purple-100 text-purple-800 border border-purple-300 shadow-sm"
+                      title="Quản trị viên Tối cao"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-purple-700 flex-shrink-0" />
+                      <span className="hidden sm:inline">Root Admin</span>
+                      <span className="sm:hidden text-[11px] font-bold">Root</span>
+                    </span>
+                  )}
+                  {!isRootAdmin && isAdmin && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 text-xs font-semibold rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300 shadow-sm"
+                      title="Quản trị viên"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-indigo-700 flex-shrink-0" />
+                      <span className="hidden sm:inline">Quản trị viên</span>
+                      <span className="sm:hidden text-[11px] font-bold">Admin</span>
+                    </span>
+                  )}
+                  {isPendingAdmin && (
+                    <span
+                      className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 text-xs font-semibold rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse"
+                      title="Đang chờ phê duyệt Quản trị viên"
+                    >
+                      <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+                      <span className="hidden sm:inline">Chờ duyệt Admin</span>
+                      <span className="sm:hidden text-[11px] font-bold">Chờ duyệt</span>
+                    </span>
+                  )}
                   {isLandlord && (
                     <span
                       className="inline-flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300"

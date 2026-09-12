@@ -11,12 +11,14 @@ import LandingPage from './components/LandingPage';
 import AuthModal from './components/AuthModal';
 import LandlordDashboard from './components/LandlordDashboard';
 import TenantDashboard from './components/TenantDashboard';
+import AdminDashboard from './components/AdminDashboard';
+import PendingAdminPage from './components/PendingAdminPage';
 import PublicInvoiceView from './components/PublicInvoiceView';
 import TariffModal from './components/TariffModal';
 import { Zap } from 'lucide-react';
 
 function MainLayout() {
-  const { user, isAuthenticated, isLandlord, isTenant, loading } = useAuth();
+  const { user, isAuthenticated, isLandlord, isTenant, isAdmin, isRootAdmin, isPendingAdmin, loading } = useAuth();
   const [currentView, setCurrentView] = useState('home'); // 'home' | 'public'
   const [publicToken, setPublicToken] = useState('');
   const [showTariffModal, setShowTariffModal] = useState(false);
@@ -128,6 +130,10 @@ function MainLayout() {
                 window.history.pushState(null, '', '/public');
               }}
             />
+          ) : (isAdmin || isRootAdmin) ? (
+            <AdminDashboard />
+          ) : isPendingAdmin ? (
+            <PendingAdminPage />
           ) : isLandlord ? (
             <LandlordDashboard onViewPublicInvoice={handleViewPublicInvoice} />
           ) : isTenant ? (

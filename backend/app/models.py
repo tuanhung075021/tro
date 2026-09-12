@@ -42,7 +42,7 @@ class User(SQLModel, table=True):
     hashed_password: str
     full_name: Optional[str] = Field(default=None)
     phone: Optional[str] = Field(default=None)
-    role: str = Field(default="tenant")  # "landlord" or "tenant"
+    role: str = Field(default="tenant")  # "tenant" | "landlord" | "admin" | "root_admin" | "pending_admin"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @property
@@ -52,6 +52,18 @@ class User(SQLModel, table=True):
     @property
     def is_tenant(self) -> bool:
         return self.role == "tenant"
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role in ("admin", "root_admin")
+
+    @property
+    def is_root_admin(self) -> bool:
+        return self.role == "root_admin"
+
+    @property
+    def is_pending_admin(self) -> bool:
+        return self.role == "pending_admin"
 
 
 class Property(SQLModel, table=True):
@@ -126,6 +138,8 @@ class SystemConfig(SQLModel, table=True):
     water_unit_price: float = Field(default=8500.0)
     water_vat_rate: float = Field(default=0.05)
     water_env_fee_rate: float = Field(default=0.10)
+    tariff_version: str = Field(default="QD-1279-2023")
+    tariff_updated_at: Optional[datetime] = Field(default=None)
 
     def get_tiers(self) -> List[Dict[str, Any]]:
         """Parse and return tiers as a Python list of dictionaries."""
@@ -189,7 +203,14 @@ class SystemConfig(SQLModel, table=True):
         )
 
     @classmethod
-    def from_configs(cls, elec_cfg: Any, water_cfg: Any, id: int = 1) -> "SystemConfig":
+    def from_configs(
+        cls,
+        elec_cfg: Any,
+        water_cfg: Any,
+        id: int = 1,
+        tariff_version: str = "QD-1279-2023",
+        tariff_updated_at: Optional[datetime] = None,
+    ) -> "SystemConfig":
         """Factory creating SystemConfig from core ElectricityConfig and WaterConfig."""
         tiers_list = [
             {
@@ -208,6 +229,8 @@ class SystemConfig(SQLModel, table=True):
             water_unit_price=float(water_cfg.unit_price),
             water_vat_rate=float(water_cfg.vat_rate),
             water_env_fee_rate=float(water_cfg.env_fee_rate),
+            tariff_version=tariff_version,
+            tariff_updated_at=tariff_updated_at,
         )
 
 
@@ -293,3 +316,41 @@ class Invoice(SQLModel, table=True):
         if b and isinstance(b, dict):
             return b.get("property_name")
         return None
+
+
+class AdminSecretKey(SQLModel, table=True):
+    """Secret registration keys allowing promotion to admin hierarchy."""
+    __tablename__ = "adminsecretkey"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    hashed_secret: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by_id: Optional[int] = Field(default=None)
+    is_active: bool = Field(default=True)
+    deactivated_at: Optional[datetime] = Field(default=None)
+
+
+class AdminApprovalRequest(SQLModel, table=True):
+    """Audit requests created when new admins register while existing admins exist."""
+    __tablename__ = "adminapprovalrequest"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="user.id")
+    secret_key_id: int = Field(foreign_key="adminsecretkey.id")
+    requested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    status: str = Field(default="pending")
+    reviewed_by_id: Optional[int] = Field(default=None)
+    reviewed_at: Optional[datetime] = Field(default=None)
+    reject_reason: Optional[str] = Field(default=None)
+
+
+class TariffChangeLog(SQLModel, table=True):
+    """Auditable log of dynamic electricity and water tariff updates."""
+    __tablename__ = "tariffchangelog"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    changed_by_id: int = Field(foreign_key="user.id")
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    tariff_version: str
+    snapshot_json: str
+    note: Optional[str] = Field(default=None)

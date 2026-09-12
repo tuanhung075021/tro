@@ -319,6 +319,69 @@ export const systemConfig = {
     }),
 };
 
+// ----------------------------------------------------------------------------
+// Admin API (Quản trị hệ thống & Biểu giá nhà nước)
+// ----------------------------------------------------------------------------
+export const admin = {
+  getRequests: () =>
+    request('/admin/requests', {
+      method: 'GET',
+    }),
+
+  approveRequest: (id) =>
+    request(`/admin/requests/${id}/approve`, {
+      method: 'POST',
+    }),
+
+  rejectRequest: (id, reject_reason) =>
+    request(`/admin/requests/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(reject_reason ? { reject_reason } : {}),
+    }),
+
+  getAdmins: () =>
+    request('/admin/admins', {
+      method: 'GET',
+    }),
+
+  promoteAdmin: (userId) =>
+    request(`/admin/promote/${userId}`, {
+      method: 'POST',
+    }),
+
+  demoteAdmin: (userId) =>
+    request(`/admin/demote/${userId}`, {
+      method: 'POST',
+    }),
+
+  rotateSecret: (new_secret) =>
+    request('/admin/secret/rotate', {
+      method: 'POST',
+      body: JSON.stringify({ new_secret }),
+    }),
+
+  getTariff: () =>
+    request('/admin/tariff', {
+      method: 'GET',
+    }),
+
+  updateTariff: (data) =>
+    request('/admin/tariff', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  getTariffHistory: () =>
+    request('/admin/tariff/history', {
+      method: 'GET',
+    }),
+
+  resetTariff: (version = 'QD-1279-2023') =>
+    request(`/admin/tariff/reset/${encodeURIComponent(version)}`, {
+      method: 'POST',
+    }),
+};
+
 export default {
   request,
   getToken,
@@ -331,4 +394,5 @@ export default {
   invoices,
   notifications,
   systemConfig,
+  admin,
 };

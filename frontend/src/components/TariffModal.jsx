@@ -3,19 +3,33 @@
  * SPDX-License-Identifier: MIT
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, Scale, ShieldCheck, Zap, Droplets, BookOpen, AlertCircle } from 'lucide-react';
+import { systemConfig } from '../services/api';
 
-export default function TariffModal({ isOpen, onClose }) {
+export default function TariffModal({ isOpen, onClose, tariffVersion: propVersion, tariffUpdatedAt: propUpdatedAt }) {
+  const [activeVersion, setActiveVersion] = useState(propVersion || 'QD-1279-2023');
+  const [updatedAt, setUpdatedAt] = useState(propUpdatedAt || null);
+
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') onClose?.();
     };
     if (isOpen) {
       window.addEventListener('keydown', handleKeyDown);
+      if (!propVersion) {
+        systemConfig.get()
+          .then((cfg) => {
+            if (cfg?.tariff_version) setActiveVersion(cfg.tariff_version);
+            if (cfg?.tariff_updated_at) setUpdatedAt(cfg.tariff_updated_at);
+          })
+          .catch(() => {
+            // Keep default QD-1279-2023
+          });
+      }
     }
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, propVersion]);
 
   if (!isOpen) return null;
 
@@ -28,6 +42,20 @@ export default function TariffModal({ isOpen, onClose }) {
     { tier: 6, range: 'Từ 401 kWh trở lên', price: '3.460 đ', priceVat: '3.737 đ' },
   ];
 
+  const formatDate = (dateStr) => {
+    if (!dateStr) return null;
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString('vi-VN', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      });
+    } catch {
+      return null;
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
       <div className="bg-white rounded-2xl sm:rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-scaleIn">
@@ -38,8 +66,23 @@ export default function TariffModal({ isOpen, onClose }) {
               <Scale className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base sm:text-lg font-black text-slate-900">Biểu giá quy định nhà nước</h2>
-              <p className="text-xs text-slate-500">Căn cứ pháp lý tính tiền điện và nước sinh hoạt</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-base sm:text-lg font-black text-slate-900">Biểu giá quy định nhà nước</h2>
+                <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 text-[11px] font-bold rounded-full border border-blue-200 font-mono">
+                  Phiên bản: {activeVersion || 'QD-1279-2023'}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span>Căn cứ pháp lý tính tiền điện và nước sinh hoạt</span>
+                {formatDate(updatedAt) && (
+                  <>
+                    <span>•</span>
+                    <span className="text-[11px] text-slate-400">
+                      Cập nhật: {formatDate(updatedAt)}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
           </div>
           <button

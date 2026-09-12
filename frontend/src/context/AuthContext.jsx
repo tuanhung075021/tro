@@ -93,14 +93,27 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  const fetchUserProfile = useCallback(async () => {
+    try {
+      const currentUser = await authApi.getMe();
+      setUser(currentUser);
+      localStorage.setItem('tro_user', JSON.stringify(currentUser));
+      return currentUser;
+    } catch (err) {
+      console.error('Failed to refresh user profile:', err);
+      return null;
+    }
+  }, []);
+
   const register = useCallback(async (userData) => {
     setLoading(true);
     setAuthError(null);
     try {
       const newUser = await authApi.register(userData);
       // Auto login after successful registration if password is provided
+      const cleanUsername = newUser?.username || (userData.username ? userData.username.split('::')[0].trim() : '');
       if (userData.password) {
-        return await login(userData.username, userData.password);
+        return await login(cleanUsername, userData.password);
       }
       return newUser;
     } catch (err) {
@@ -127,6 +140,10 @@ export function AuthProvider({ children }) {
     isAuthenticated: Boolean(token && user),
     isLandlord: user?.role === 'landlord',
     isTenant: user?.role === 'tenant',
+    isAdmin: user?.role === 'admin' || user?.role === 'root_admin',
+    isRootAdmin: user?.role === 'root_admin',
+    isPendingAdmin: user?.role === 'pending_admin',
+    refreshUser: fetchUserProfile,
     login,
     register,
     logout,

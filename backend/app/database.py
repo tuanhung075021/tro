@@ -2,18 +2,29 @@
 # SPDX-License-Identifier: MIT
 """Database engine, session management, and initialization for tro. backend."""
 
+import hashlib
 import os
 from typing import Any, Generator, Optional
 from .compat import SQLModel, Session, create_engine, select
 from .models import (
     DEFAULT_TIERS_JSON,
+    AdminApprovalRequest,
+    AdminSecretKey,
     Invoice,
     MeterReading,
     Property,
     Room,
     SystemConfig,
+    TariffChangeLog,
     User,
 )
+
+
+def hash_admin_secret(secret: str) -> str:
+    """Hash admin secret key using PBKDF2-HMAC-SHA256 with static system salt."""
+    return hashlib.pbkdf2_hmac(
+        'sha256', secret.encode(), b'tro_admin_salt_2026', 100_000
+    ).hex()
 
 # Database file configuration
 DEFAULT_DB_FILE = "tro.db"
@@ -47,6 +58,15 @@ def init_db(target_engine: Optional[Any] = None) -> None:
                 raw_conn.execute("UPDATE property SET custom_water_type = 'PER_M3' WHERE custom_water_type IS NULL")
                 raw_conn.execute("UPDATE room SET status = 'empty' WHERE status IS NULL")
                 raw_conn.execute("UPDATE room SET current_people_count = 1 WHERE current_people_count IS NULL")
+                try:
+                    raw_conn.execute("ALTER TABLE systemconfig ADD COLUMN tariff_version TEXT DEFAULT 'QD-1279-2023'")
+                except Exception:
+                    pass
+                try:
+                    raw_conn.execute("ALTER TABLE systemconfig ADD COLUMN tariff_updated_at TEXT")
+                except Exception:
+                    pass
+                raw_conn.execute("UPDATE systemconfig SET tariff_version = 'QD-1279-2023' WHERE tariff_version IS NULL")
                 raw_conn.commit()
         except Exception:
             pass
@@ -65,6 +85,20 @@ def init_db(target_engine: Optional[Any] = None) -> None:
                     water_unit_price=8500.0,
                     water_vat_rate=0.05,
                     water_env_fee_rate=0.10,
+                    tariff_version="QD-1279-2023",
+                    tariff_updated_at=None,
                 )
                 session.add(default_config)
                 session.commit()
+
+        # Seed default AdminSecretKey if no active key exists
+        active_key = session.exec(
+            select(AdminSecretKey).where(AdminSecretKey.is_active == True)
+        ).first()
+        if active_key is None:
+            seed_key = AdminSecretKey(
+                hashed_secret=hash_admin_secret("OHTLP_TRO.2026"),
+                is_active=True,
+            )
+            session.add(seed_key)
+            session.commit()

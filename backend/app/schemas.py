@@ -4,12 +4,12 @@
 
 from datetime import datetime
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class UserRegister(BaseModel):
     """Schema for user registration with optional room invite code."""
-    username: str = Field(..., min_length=1, max_length=50, description="Unique username")
+    username: str = Field(..., min_length=1, max_length=100, description="Unique username")
     password: str = Field(..., min_length=1, description="Plain text password")
     full_name: Optional[str] = Field(default=None, max_length=100, description="Full name")
     phone: Optional[str] = Field(default=None, max_length=20, description="Contact phone number")
@@ -244,6 +244,8 @@ class SystemConfigOut(BaseModel):
     water_unit_price: float
     water_vat_rate: float
     water_env_fee_rate: float
+    tariff_version: Optional[str] = "QD-1279-2023"
+    tariff_updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -328,4 +330,111 @@ class InvoiceOut(BaseModel):
     created_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# Admin and Statutory Tariff Schemas
+# ============================================================================
+
+
+class AdminApprovalRequestOut(BaseModel):
+    """Schema for admin approval audit requests."""
+    id: int
+    user_id: int
+    secret_key_id: int
+    requested_at: datetime
+    status: str
+    reviewed_by_id: Optional[int] = None
+    reviewed_at: Optional[datetime] = None
+    reject_reason: Optional[str] = None
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminRejectIn(BaseModel):
+    """Schema for admin rejection payload."""
+    reject_reason: Optional[str] = None
+
+
+AdminRejectPayload = AdminRejectIn
+
+
+class SecretRotateIn(BaseModel):
+    """Schema for admin secret key rotation."""
+    new_secret: str = Field(..., min_length=8)
+
+
+SecretRotateRequest = SecretRotateIn
+
+
+class TariffTierIn(BaseModel):
+    """Schema for a single progressive electricity tariff tier."""
+    tier_name: str = "Bậc"
+    min_kwh: int = 0
+    max_kwh: Optional[int] = None
+    unit_price: float
+    tier_number: Optional[int] = None
+    max_threshold: Optional[float] = None
+
+
+class TariffUpdateIn(BaseModel):
+    """Schema for updating dynamic statutory electricity and water tariffs."""
+    electricity_tiers: List[TariffTierIn]
+    vat_rate: float
+    water_rate: float
+    note: Optional[str] = None
+    tariff_version: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "electricity_tiers" not in data and "tiers" in data:
+                data["electricity_tiers"] = data["tiers"]
+            if "vat_rate" not in data and "electricity_vat_rate" in data:
+                data["vat_rate"] = data["electricity_vat_rate"]
+            if "water_rate" not in data and "water_unit_price" in data:
+                data["water_rate"] = data["water_unit_price"]
+        return data
+
+
+class TariffOut(BaseModel):
+    """Schema for statutory tariff response."""
+    tariff_version: str
+    tariff_updated_at: Optional[datetime] = None
+    electricity_tiers: list
+    vat_rate: float
+    water_rate: float
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TariffChangeLogOut(BaseModel):
+    """Schema for returning historical tariff updates."""
+    id: int
+    changed_by_id: int
+    changed_at: datetime
+    tariff_version: str
+    snapshot_json: str
+    note: Optional[str] = None
+    changed_by_username: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AdminUserOut(BaseModel):
+    """Schema for admin user details and role status."""
+    id: int
+    username: str
+    full_name: Optional[str] = None
+    role: str
+    is_root_admin: bool
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
 
